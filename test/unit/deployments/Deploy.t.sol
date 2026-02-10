@@ -8,9 +8,8 @@ import {
     MainnetControllerDeploy
 } from "../../../deploy/ControllerDeploy.sol";
 
-import { MockDaiUsds } from "../mocks/MockDaiUsds.sol";
-import { MockPSM }     from "../mocks/MockPSM.sol";
-import { MockVault }   from "../mocks/MockVault.sol";
+import { IALMProxy } from "../../../src/interfaces/IALMProxy.sol";
+import { IRateLimits } from "../../../src/interfaces/IRateLimits.sol";
 
 import { ALMProxy }          from "../../../src/ALMProxy.sol";
 import { ForeignController } from "../../../src/ForeignController.sol";
@@ -21,148 +20,54 @@ import { UnitTestBase } from "../UnitTestBase.t.sol";
 
 contract ForeignController_Deploy_Tests is UnitTestBase {
 
-    function test_deployController() public {
-        address admin = makeAddr("admin");
-        address psm   = makeAddr("psm");
-        address usdc  = makeAddr("usdc");
-        address cctp  = makeAddr("cctp");
-
+    function test_deployController() external {
         address almProxy   = address(new ALMProxy(admin));
         address rateLimits = address(new RateLimits(admin));
 
-        ForeignController controller = ForeignController(
-            ForeignControllerDeploy.deployController(
-                admin,
-                almProxy,
-                rateLimits,
-                psm,
-                usdc,
-                cctp
-            )
-        );
+        address controller = ForeignControllerDeploy.deployController(admin, almProxy, rateLimits);
 
-        assertEq(controller.hasRole(DEFAULT_ADMIN_ROLE, admin), true);
+        assertEq(ForeignController(controller).hasRole(DEFAULT_ADMIN_ROLE, admin), true);
 
-        assertEq(address(controller.proxy()),      almProxy);
-        assertEq(address(controller.rateLimits()), rateLimits);
-        assertEq(address(controller.psm()),        psm);
-        assertEq(address(controller.usdc()),       usdc);
-        assertEq(address(controller.cctp()),       cctp);
+        assertEq(ForeignController(controller).proxy(),      almProxy);
+        assertEq(ForeignController(controller).rateLimits(), rateLimits);
     }
 
-    function test_deployFull() public {
-        address admin = makeAddr("admin");
-        address psm   = makeAddr("psm");
-        address usdc  = makeAddr("usdc");
-        address cctp  = makeAddr("cctp");
+    function test_deployFull() external {
+        ControllerInstance memory instance = ForeignControllerDeploy.deployFull(admin);
 
-        ControllerInstance memory instance
-            = ForeignControllerDeploy.deployFull(admin, psm, usdc, cctp);
+        assertEq(IALMProxy(instance.almProxy).hasRole(DEFAULT_ADMIN_ROLE, admin),           true);
+        assertEq(IRateLimits(instance.rateLimits).hasRole(DEFAULT_ADMIN_ROLE, admin),       true);
+        assertEq(ForeignController(instance.controller).hasRole(DEFAULT_ADMIN_ROLE, admin), true);
 
-        ALMProxy          almProxy   = ALMProxy(payable(instance.almProxy));
-        ForeignController controller = ForeignController(instance.controller);
-        RateLimits        rateLimits = RateLimits(instance.rateLimits);
-
-        assertEq(almProxy.hasRole(DEFAULT_ADMIN_ROLE, admin),   true);
-        assertEq(rateLimits.hasRole(DEFAULT_ADMIN_ROLE, admin), true);
-        assertEq(controller.hasRole(DEFAULT_ADMIN_ROLE, admin), true);
-
-        assertEq(address(controller.proxy()),      instance.almProxy);
-        assertEq(address(controller.rateLimits()), instance.rateLimits);
-        assertEq(address(controller.psm()),        psm);
-        assertEq(address(controller.usdc()),       usdc);
-        assertEq(address(controller.cctp()),       cctp);
+        assertEq(ForeignController(instance.controller).proxy(),      instance.almProxy);
+        assertEq(ForeignController(instance.controller).rateLimits(), instance.rateLimits);
     }
 
 }
 
 contract MainnetController_Deploy_Tests is UnitTestBase {
 
-    struct TestVars {
-        address daiUsds;
-        address psm;
-        address admin;
-        address vault;
-        address cctp;
-    }
-
-    function test_deployController() public {
-        TestVars memory vars;  // Avoid stack too deep
-
-        vars.daiUsds = address(new MockDaiUsds(makeAddr("dai")));
-        vars.psm     = address(new MockPSM(makeAddr("usdc")));
-        vars.vault   = address(new MockVault(makeAddr("buffer")));
-
-        vars.admin = makeAddr("admin");
-        vars.cctp  = makeAddr("cctp");
-
+    function test_deployController() external {
         address almProxy   = address(new ALMProxy(admin));
         address rateLimits = address(new RateLimits(admin));
 
-        MainnetController controller = MainnetController(
-            MainnetControllerDeploy.deployController(
-                admin,
-                almProxy,
-                rateLimits,
-                vars.vault,
-                vars.psm,
-                vars.daiUsds,
-                vars.cctp
-            )
-        );
+        address controller = MainnetControllerDeploy.deployController(admin, almProxy, rateLimits);
 
-        assertEq(controller.hasRole(DEFAULT_ADMIN_ROLE, admin), true);
+        assertEq(MainnetController(controller).hasRole(DEFAULT_ADMIN_ROLE, admin), true);
 
-        assertEq(address(controller.proxy()),      almProxy);
-        assertEq(address(controller.rateLimits()), rateLimits);
-        assertEq(address(controller.vault()),      vars.vault);
-        assertEq(address(controller.buffer()),     makeAddr("buffer"));  // Buffer param in MockVault
-        assertEq(address(controller.psm()),        vars.psm);
-        assertEq(address(controller.daiUsds()),    vars.daiUsds);
-        assertEq(address(controller.cctp()),       vars.cctp);
-        assertEq(address(controller.dai()),        makeAddr("dai"));   // Dai param in MockDaiUsds
-        assertEq(address(controller.usdc()),       makeAddr("usdc"));  // Gem param in MockPSM
-
-        assertEq(controller.psmTo18ConversionFactor(), 1e12);
+        assertEq(MainnetController(controller).proxy(),      almProxy);
+        assertEq(MainnetController(controller).rateLimits(), rateLimits);
     }
 
-    function test_deployFull() public {
-        TestVars memory vars;  // Avoid stack too deep
+    function test_deployFull() external {
+        ControllerInstance memory instance = MainnetControllerDeploy.deployFull(admin);
 
-        vars.daiUsds = address(new MockDaiUsds(makeAddr("dai")));
-        vars.psm     = address(new MockPSM(makeAddr("usdc")));
-        vars.vault   = address(new MockVault(makeAddr("buffer")));
+        assertEq(IALMProxy(instance.almProxy).hasRole(DEFAULT_ADMIN_ROLE, admin),           true);
+        assertEq(MainnetController(instance.controller).hasRole(DEFAULT_ADMIN_ROLE, admin), true);
+        assertEq(IRateLimits(instance.rateLimits).hasRole(DEFAULT_ADMIN_ROLE, admin),       true);
 
-        vars.admin  = makeAddr("admin");
-        vars.cctp   = makeAddr("cctp");
-
-        ControllerInstance memory instance = MainnetControllerDeploy.deployFull(
-            admin,
-            vars.vault,
-            vars.psm,
-            vars.daiUsds,
-            vars.cctp
-        );
-
-        ALMProxy          almProxy   = ALMProxy(payable(instance.almProxy));
-        MainnetController controller = MainnetController(instance.controller);
-        RateLimits        rateLimits = RateLimits(instance.rateLimits);
-
-        assertEq(almProxy.hasRole(DEFAULT_ADMIN_ROLE, admin),   true);
-        assertEq(controller.hasRole(DEFAULT_ADMIN_ROLE, admin), true);
-        assertEq(rateLimits.hasRole(DEFAULT_ADMIN_ROLE, admin), true);
-
-        assertEq(address(controller.proxy()),      instance.almProxy);
-        assertEq(address(controller.rateLimits()), instance.rateLimits);
-        assertEq(address(controller.vault()),      vars.vault);
-        assertEq(address(controller.buffer()),     makeAddr("buffer"));  // Buffer param in MockVault
-        assertEq(address(controller.psm()),        vars.psm);
-        assertEq(address(controller.daiUsds()),    vars.daiUsds);
-        assertEq(address(controller.cctp()),       vars.cctp);
-        assertEq(address(controller.dai()),        makeAddr("dai"));   // Dai param in MockDaiUsds
-        assertEq(address(controller.usdc()),       makeAddr("usdc"));  // Gem param in MockPSM
-
-        assertEq(controller.psmTo18ConversionFactor(), 1e12);
+        assertEq(MainnetController(instance.controller).proxy(),      instance.almProxy);
+        assertEq(MainnetController(instance.controller).rateLimits(), instance.rateLimits);
     }
 
 }

@@ -6,36 +6,19 @@ import { ReentrancyGuard } from "../../../lib/openzeppelin-contracts/contracts/u
 import { MainnetController } from "../../../src/MainnetController.sol";
 import { ForeignController } from "../../../src/ForeignController.sol";
 
-import { MockDaiUsds } from "../mocks/MockDaiUsds.sol";
-import { MockPSM }     from "../mocks/MockPSM.sol";
-import { MockPSM3 }    from "../mocks/MockPSM3.sol";
-import { MockVault }   from "../mocks/MockVault.sol";
+import { MockPSM3 } from "../mocks/MockPSM3.sol";
 
 import { UnitTestBase } from "../UnitTestBase.t.sol";
 
 contract MainnetController_RemoveRelayer_Tests is UnitTestBase {
 
-    MainnetController controller;
+    MainnetController internal controller;
 
-    address relayer1 = makeAddr("relayer1");
-    address relayer2 = makeAddr("relayer2");
-
-    event RelayerRemoved(address indexed relayer);
+    address internal relayer1 = makeAddr("relayer1");
+    address internal relayer2 = makeAddr("relayer2");
 
     function setUp() public virtual {
-        MockDaiUsds daiUsds = new MockDaiUsds(makeAddr("dai"));
-        MockPSM     psm     = new MockPSM(makeAddr("usdc"));
-        MockVault   vault   = new MockVault(makeAddr("buffer"));
-
-        controller = new MainnetController(
-            admin,
-            makeAddr("almProxy"),
-            makeAddr("rateLimits"),
-            address(vault),
-            address(psm),
-            address(daiUsds),
-            makeAddr("cctp")
-        );
+        controller = new MainnetController(admin, makeAddr("almProxy"), makeAddr("rateLimits"));
 
         vm.startPrank(admin);
 
@@ -52,7 +35,7 @@ contract MainnetController_RemoveRelayer_Tests is UnitTestBase {
         controller.removeRelayer(relayer);
     }
 
-    function test_removeRelayer_unauthorizedAccount() public {
+    function test_removeRelayer_unauthorizedAccount() external {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
@@ -60,22 +43,23 @@ contract MainnetController_RemoveRelayer_Tests is UnitTestBase {
         ));
         controller.removeRelayer(relayer);
 
-        vm.prank(admin);
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             admin,
             FREEZER
         ));
+        vm.prank(admin);
         controller.removeRelayer(relayer);
     }
 
-    function test_removeRelayer() public {
+    function test_removeRelayer() external {
         assertEq(controller.hasRole(RELAYER, relayer1), true);
         assertEq(controller.hasRole(RELAYER, relayer2), true);
 
-        vm.prank(freezer);
         vm.expectEmit(address(controller));
-        emit RelayerRemoved(relayer1);
+        emit MainnetController.RelayerRemoved(relayer1);
+
+        vm.prank(freezer);
         controller.removeRelayer(relayer1);
 
         assertEq(controller.hasRole(RELAYER, relayer1), false);
@@ -83,9 +67,10 @@ contract MainnetController_RemoveRelayer_Tests is UnitTestBase {
 
         vm.record();
 
-        vm.prank(freezer);
         vm.expectEmit(address(controller));
-        emit RelayerRemoved(relayer2);
+        emit MainnetController.RelayerRemoved(relayer2);
+
+        vm.prank(freezer);
         controller.removeRelayer(relayer2);
 
         _assertReentrancyGuardWrittenToTwice(address(controller));
@@ -98,27 +83,13 @@ contract MainnetController_RemoveRelayer_Tests is UnitTestBase {
 
 contract ForeignController_RemoveRelayer_Tests is UnitTestBase {
 
-    ForeignController controller;
+    ForeignController internal controller;
 
-    address relayer1 = makeAddr("relayer1");
-    address relayer2 = makeAddr("relayer2");
-    address susds    = makeAddr("susds");
-    address usdc     = makeAddr("usdc");
-    address usds     = makeAddr("usds");
-
-    event RelayerRemoved(address indexed relayer);
+    address internal relayer1 = makeAddr("relayer1");
+    address internal relayer2 = makeAddr("relayer2");
 
     function setUp() public {
-        MockPSM3 psm3 = new MockPSM3(usds, usdc, susds);
-
-        controller = new ForeignController(
-            admin,
-            makeAddr("almProxy"),
-            makeAddr("rateLimits"),
-            address(psm3),
-            usdc,
-            makeAddr("cctp")
-        );
+        controller = new ForeignController(admin, makeAddr("almProxy"), makeAddr("rateLimits"));
 
         vm.startPrank(admin);
 
@@ -135,7 +106,7 @@ contract ForeignController_RemoveRelayer_Tests is UnitTestBase {
         controller.removeRelayer(relayer);
     }
 
-    function test_removeRelayer_unauthorizedAccount() public {
+    function test_removeRelayer_unauthorizedAccount() external {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
@@ -143,22 +114,23 @@ contract ForeignController_RemoveRelayer_Tests is UnitTestBase {
         ));
         controller.removeRelayer(relayer);
 
-        vm.prank(admin);
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             admin,
             FREEZER
         ));
+        vm.prank(admin);
         controller.removeRelayer(relayer);
     }
 
-    function test_removeRelayer() public {
+    function test_removeRelayer() external {
         assertEq(controller.hasRole(RELAYER, relayer1), true);
         assertEq(controller.hasRole(RELAYER, relayer2), true);
 
-        vm.prank(freezer);
         vm.expectEmit(address(controller));
-        emit RelayerRemoved(relayer1);
+        emit ForeignController.RelayerRemoved(relayer1);
+
+        vm.prank(freezer);
         controller.removeRelayer(relayer1);
 
         assertEq(controller.hasRole(RELAYER, relayer1), false);
@@ -166,9 +138,10 @@ contract ForeignController_RemoveRelayer_Tests is UnitTestBase {
 
         vm.record();
 
-        vm.prank(freezer);
         vm.expectEmit(address(controller));
-        emit RelayerRemoved(relayer2);
+        emit ForeignController.RelayerRemoved(relayer2);
+
+        vm.prank(freezer);
         controller.removeRelayer(relayer2);
 
         _assertReentrancyGuardWrittenToTwice(address(controller));

@@ -1,81 +1,34 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.21;
 
-import { RateLimits, IRateLimits } from "../../../src/RateLimits.sol";
-import { RateLimitHelpers }        from "../../../src/RateLimitHelpers.sol";
+import { Test } from "../../../lib/forge-std/src/Test.sol";
+
+import { makeAddressKey, makeAddressAddressKey, makeUint32Key } from "../../../src/RateLimitHelpers.sol";
 
 import { UnitTestBase } from "../UnitTestBase.t.sol";
 
-contract RateLimitHelpersWrapper {
+contract RateLimitHelpers_Tests is Test {
 
-    function makeAddressKey(bytes32 key, address asset) public pure returns (bytes32) {
-        return RateLimitHelpers.makeAddressKey(key, asset);
-    }
+    bytes32 internal constant KEY  = "KEY";
+    string  internal constant NAME = "NAME";
 
-    function makeAddressAddressKey(bytes32 key, address asset, address destination) public pure returns (bytes32) {
-        return RateLimitHelpers.makeAddressAddressKey(key, asset, destination);
-    }
-
-    function makeUint32Key(bytes32 key, uint32 domain) public pure returns (bytes32) {
-        return RateLimitHelpers.makeUint32Key(key, domain);
-    }
-
-}
-
-abstract contract RateLimitHelpers_TestBase is UnitTestBase {
-
-    bytes32 constant KEY  = "KEY";
-    string  constant NAME = "NAME";
-
-    address controller = makeAddr("controller");
-
-    RateLimits              rateLimits;
-    RateLimitHelpersWrapper wrapper;
-
-    function setUp() public {
-        // Set wrapper as admin so it can set rate limits
-        wrapper    = new RateLimitHelpersWrapper();
-        rateLimits = new RateLimits(address(wrapper));
-    }
-
-    function _assertLimitData(
-        bytes32 key,
-        uint256 maxAmount,
-        uint256 slope,
-        uint256 lastAmount,
-        uint256 lastUpdated
-    )
-        internal view
-    {
-        IRateLimits.RateLimitData memory d = rateLimits.getRateLimitData(key);
-
-        assertEq(d.maxAmount,   maxAmount);
-        assertEq(d.slope,       slope);
-        assertEq(d.lastAmount,  lastAmount);
-        assertEq(d.lastUpdated, lastUpdated);
-    }
-
-}
-
-contract RateLimitHelpers_PureFunction_Tests is RateLimitHelpers_TestBase {
-
-    function test_makeAddressKey() public view {
+    function test_makeAddressKey() external view {
         assertEq(
-            wrapper.makeAddressKey(KEY, address(this)),
+            makeAddressKey(KEY, address(this)),
             keccak256(abi.encode(KEY, address(this)))
         );
     }
 
-    function test_makeAddressAddressKey() public view {
+    function test_makeAddressAddressKey() external view {
         assertEq(
-            wrapper.makeAddressAddressKey(KEY, address(this), address(0)),
+            makeAddressAddressKey(KEY, address(this), address(0)),
             keccak256(abi.encode(KEY, address(this), address(0)))
         );
     }
 
-    function test_makeUint32Key() public view {
+    function test_makeUint32Key() external view {
         assertEq(
-            wrapper.makeUint32Key(KEY, 123),
+            makeUint32Key(KEY, 123),
             keccak256(abi.encode(KEY, 123))
         );
     }

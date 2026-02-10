@@ -5,7 +5,7 @@ import { IERC20 } from "../../../lib/forge-std/src/interfaces/IERC20.sol";
 
 import { Ownable } from "../../../lib/openzeppelin-contracts/contracts/access/Ownable.sol";
 
-contract MockUsdsJoin is Ownable {
+contract MockUSDSJoin is Ownable {
 
     address public immutable vat;
     IERC20  public immutable usds;

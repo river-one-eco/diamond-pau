@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.21;
 
+import { Ethereum } from "../../lib/spark-address-registry/src/Ethereum.sol";
+
 import { IALMProxy }   from "../interfaces/IALMProxy.sol";
 import { IRateLimits } from "../interfaces/IRateLimits.sol";
 
@@ -34,46 +36,36 @@ interface IWSTETHLike {
 
 library WSTETHLib {
 
+    /**********************************************************************************************/
+    /*** Constants                                                                              ***/
+    /**********************************************************************************************/
+
     bytes32 public constant LIMIT_DEPOSIT          = keccak256("LIMIT_WSTETH_DEPOSIT");
     bytes32 public constant LIMIT_REQUEST_WITHDRAW = keccak256("LIMIT_WSTETH_REQUEST_WITHDRAW");
 
     /**********************************************************************************************/
-    /*** External functions                                                                     ***/
+    /*** External interactive functions                                                         ***/
     /**********************************************************************************************/
 
-    function deposit(
-        address proxy,
-        address rateLimits,
-        address weth,
-        address wsteth,
-        uint256 amount
-    )
-        external
-    {
+    function deposit(address proxy, address rateLimits, uint256 amount) external {
         _decreaseRateLimit(rateLimits, LIMIT_DEPOSIT, amount);
 
-        IALMProxy(proxy).doCall(weth, abi.encodeCall(IWETHLike.withdraw, (amount)));
+        IALMProxy(proxy).doCall(Ethereum.WETH, abi.encodeCall(IWETHLike.withdraw, (amount)));
 
-        IALMProxy(proxy).doCallWithValue(wsteth, "", amount);
+        IALMProxy(proxy).doCallWithValue(Ethereum.WSTETH, "", amount);
     }
 
-    function requestWithdraw(
-        address proxy,
-        address rateLimits,
-        address wsteth,
-        address withdrawQueue,
-        uint256 amountToRedeem
-    )
+    function requestWithdraw(address proxy, address rateLimits, uint256 amountToRedeem)
         external
         returns (uint256[] memory requestIds)
     {
-        uint256 stethAmount = IWSTETHLike(wsteth).getStETHByWstETH(amountToRedeem);
+        uint256 stethAmount = IWSTETHLike(Ethereum.WSTETH).getStETHByWstETH(amountToRedeem);
 
         _decreaseRateLimit(rateLimits, LIMIT_REQUEST_WITHDRAW, stethAmount);
 
         IALMProxy(proxy).doCall(
-            wsteth,
-            abi.encodeCall(IERC20ike.approve, (withdrawQueue, amountToRedeem))
+            Ethereum.WSTETH,
+            abi.encodeCall(IERC20ike.approve, (Ethereum.WSTETH_WITHDRAW_QUEUE, amountToRedeem))
         );
 
         uint256[] memory amountsToRedeem = new uint256[](1);
@@ -81,7 +73,7 @@ library WSTETHLib {
 
         return abi.decode(
             IALMProxy(proxy).doCall(
-                withdrawQueue,
+                Ethereum.WSTETH_WITHDRAW_QUEUE,
                 abi.encodeCall(
                     IWithdrawalQueueLike.requestWithdrawalsWstETH,
                     (amountsToRedeem, proxy)
@@ -91,23 +83,20 @@ library WSTETHLib {
         );
     }
 
-    function claimWithdrawal(
-        address proxy,
-        address withdrawQueue,
-        address weth,
-        uint256 requestId
-    )
-        external
-    {
-        uint256 initialETHBalance = address(proxy).balance;
+    function claimWithdrawal(address proxy, uint256 requestId) external {
+        uint256 initialETHBalance = proxy.balance;
 
         IALMProxy(proxy).doCall(
-            withdrawQueue,
+            Ethereum.WSTETH_WITHDRAW_QUEUE,
             abi.encodeCall(IWithdrawalQueueLike.claimWithdrawal, (requestId))
         );
 
-        IALMProxy(proxy).doCallWithValue(weth, "", address(proxy).balance - initialETHBalance);
+        IALMProxy(proxy).doCallWithValue(Ethereum.WETH, "", proxy.balance - initialETHBalance);
     }
+
+    /**********************************************************************************************/
+    /*** Internal interactive functions                                                         ***/
+    /**********************************************************************************************/
 
     function _decreaseRateLimit(address rateLimits, bytes32 key, uint256 amount) internal {
         IRateLimits(rateLimits).triggerRateLimitDecrease(key, amount);

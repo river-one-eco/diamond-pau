@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.21;
 
+import { ERC20Mock }       from "../../lib/openzeppelin-contracts/contracts/mocks/token/ERC20Mock.sol";
 import { ReentrancyGuard } from "../../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
 import { Base } from "../../lib/spark-address-registry/src/Base.sol";
+
+import { PSM3Deploy } from "../../lib/spark-psm/deploy/PSM3Deploy.sol";
 
 import { makeAddressKey } from "../../src/RateLimitHelpers.sol";
 
@@ -11,11 +14,77 @@ import { ForkTestBase } from"./ForkTestBase.t.sol";
 
 interface IERC20Like {
 
+    function approve(address spender, uint256 amount) external returns (bool);
+
+    function allowance(address owner, address spender) external view returns (uint256);
+
     function balanceOf(address account) external view returns (uint256);
 
 }
 
+interface IPSM3Like {
+
+    function setPocket(address pocket) external;
+
+    function shares(address account) external view returns (uint256);
+
+    function totalShares() external view returns (uint256);
+
+    function totalAssets() external view returns (uint256);
+
+}
+
 abstract contract PSM_TestBase is ForkTestBase {
+
+    IERC20Like internal constant USDC = IERC20Like(Base.USDC);
+
+    IERC20Like internal usds;
+    IERC20Like internal susds;
+
+    IPSM3Like internal psm;
+
+    address internal pocket = makeAddr("pocket");
+
+    function setUp() public override {
+        super.setUp();
+
+        usds  = IERC20Like(address(new ERC20Mock()));
+        susds = IERC20Like(address(new ERC20Mock()));
+
+        deal(address(usds), address(this), 1e18);  // For seeding PSM during deployment
+
+        psm = IPSM3Like(PSM3Deploy.deploy(
+            Base.SPARK_EXECUTOR, Base.USDC, address(usds), address(susds), Base.SSR_AUTH_ORACLE
+        ));
+
+        vm.prank(Base.SPARK_EXECUTOR);
+        psm.setPocket(pocket);
+
+        vm.prank(pocket);
+        USDC.approve(address(psm), type(uint256).max);
+
+        vm.startPrank(Base.SPARK_EXECUTOR);
+
+        uint256 usdcMaxAmount = 5_000_000e6;
+        uint256 usdcSlope     = uint256(1_000_000e6) / 4 hours;
+        uint256 usdsMaxAmount = 5_000_000e18;
+        uint256 usdsSlope     = uint256(1_000_000e18) / 4 hours;
+
+        bytes32 depositKey  = foreignController.LIMIT_PSM_DEPOSIT();
+        bytes32 withdrawKey = foreignController.LIMIT_PSM_WITHDRAW();
+
+        rateLimits.setRateLimitData(makeAddressKey(depositKey,  Base.USDC),      usdcMaxAmount, usdcSlope);
+        rateLimits.setRateLimitData(makeAddressKey(withdrawKey, Base.USDC),      usdcMaxAmount, usdcSlope);
+        rateLimits.setRateLimitData(makeAddressKey(depositKey,  address(usds)),  usdsMaxAmount, usdsSlope);
+        rateLimits.setRateLimitData(makeAddressKey(depositKey,  address(susds)), usdsMaxAmount, usdsSlope);
+
+        rateLimits.setUnlimitedRateLimitData(makeAddressKey(withdrawKey, address(usds)));
+        rateLimits.setUnlimitedRateLimitData(makeAddressKey(withdrawKey, address(susds)));
+
+        foreignController.setPSM3(address(psm));
+
+        vm.stopPrank();
+    }
 
     function _assertState(
         address token,
@@ -30,22 +99,22 @@ abstract contract PSM_TestBase is ForkTestBase {
         internal
         view
     {
-        address custodian = token == Base.USDC ? pocket : address(psmBase);
+        address custodian = token == Base.USDC ? pocket : address(psm);
 
-        assertEq(IERC20Like(token).balanceOf(address(almProxy)),          proxyBalance);
+        assertEq(IERC20Like(token).balanceOf(almProxy),                   proxyBalance);
         assertEq(IERC20Like(token).balanceOf(address(foreignController)), 0);  // Should always be zero
         assertEq(IERC20Like(token).balanceOf(custodian),                  psmBalance);
 
-        assertEq(psmBase.shares(address(almProxy)), proxyShares);
-        assertEq(psmBase.totalShares(),             totalShares);
-        assertEq(psmBase.totalAssets(),             totalAssets);
+        assertEq(psm.shares(almProxy), proxyShares);
+        assertEq(psm.totalShares(),    totalShares);
+        assertEq(psm.totalAssets(),    totalAssets);
 
         bytes32 assetKey = makeAddressKey(rateLimitKey, token);
 
         assertEq(rateLimits.getCurrentRateLimit(assetKey), currentRateLimit);
 
         // Should always be 0 before and after calls
-        assertEq(usdsBase.allowance(address(almProxy), address(psmBase)), 0);
+        assertEq(usds.allowance(almProxy, address(psm)), 0);
     }
 
 }
@@ -55,64 +124,64 @@ contract ForeignController_PSM_Deposit_Tests is PSM_TestBase {
     function test_depositPSM_reentrancy() external {
         _setControllerEntered();
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        foreignController.depositPSM(address(usdsBase), 1_000_000e18);
+        foreignController.depositPSM(address(usds), 1_000_000e18);
     }
 
     function test_depositPSM_notRelayer() external {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            RELAYER_ROLE
         ));
-        foreignController.depositPSM(address(usdsBase), 1_000_000e18);
+        foreignController.depositPSM(address(usds), 1_000_000e18);
     }
 
     function test_depositPSM_zeroMaxAmount() external {
         vm.expectRevert("RateLimits/zero-maxAmount");
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         foreignController.depositPSM(makeAddr("fake-token"), 1_000_000e18);
     }
 
     function test_depositPSM_usdcRateLimitedBoundary() external {
-        deal(Base.USDC, address(almProxy), 5_000_000e6 + 1);
+        deal(Base.USDC, almProxy, 5_000_000e6 + 1);
 
         vm.expectRevert("RateLimits/rate-limit-exceeded");
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         foreignController.depositPSM(Base.USDC, 5_000_000e6 + 1);
 
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         foreignController.depositPSM(Base.USDC, 5_000_000e6);
     }
 
     function test_depositPSM_usdsRateLimitedBoundary() external {
-        deal(address(usdsBase), address(almProxy), 5_000_000e18 + 1);
+        deal(address(usds), almProxy, 5_000_000e18 + 1);
 
         vm.expectRevert("RateLimits/rate-limit-exceeded");
-        vm.prank(relayer);
-        foreignController.depositPSM(address(usdsBase), 5_000_000e18 + 1);
+        vm.prank(RELAYER);
+        foreignController.depositPSM(address(usds), 5_000_000e18 + 1);
 
-        vm.prank(relayer);
-        foreignController.depositPSM(address(usdsBase), 5_000_000e18);
+        vm.prank(RELAYER);
+        foreignController.depositPSM(address(usds), 5_000_000e18);
     }
 
     function test_depositPSM_susdsRateLimitedBoundary() external {
-        deal(address(susdsBase), address(almProxy), 5_000_000e18 + 1);
+        deal(address(susds), almProxy, 5_000_000e18 + 1);
 
         vm.expectRevert("RateLimits/rate-limit-exceeded");
-        vm.prank(relayer);
-        foreignController.depositPSM(address(susdsBase), 5_000_000e18 + 1);
+        vm.prank(RELAYER);
+        foreignController.depositPSM(address(susds), 5_000_000e18 + 1);
 
-        vm.prank(relayer);
-        foreignController.depositPSM(address(susdsBase), 5_000_000e18);
+        vm.prank(RELAYER);
+        foreignController.depositPSM(address(susds), 5_000_000e18);
     }
 
     function test_depositPSM_depositUSDS() external {
         bytes32 key = foreignController.LIMIT_PSM_DEPOSIT();
 
-        deal(address(usdsBase), address(almProxy), 100e18);
+        deal(address(usds), almProxy, 100e18);
 
         _assertState({
-            token            : address(usdsBase),
+            token            : address(usds),
             proxyBalance     : 100e18,
             psmBalance       : 1e18,  // From seeding USDS
             proxyShares      : 0,
@@ -124,15 +193,15 @@ contract ForeignController_PSM_Deposit_Tests is PSM_TestBase {
 
         vm.record();
 
-        vm.prank(relayer);
-        uint256 shares = foreignController.depositPSM(address(usdsBase), 100e18);
+        vm.prank(RELAYER);
+        uint256 shares = foreignController.depositPSM(address(usds), 100e18);
 
         _assertReentrancyGuardWrittenToTwice();
 
         assertEq(shares, 100e18);
 
         _assertState({
-            token            : address(usdsBase),
+            token            : address(usds),
             proxyBalance     : 0,
             psmBalance       : 101e18,
             proxyShares      : 100e18,
@@ -146,7 +215,7 @@ contract ForeignController_PSM_Deposit_Tests is PSM_TestBase {
     function test_depositPSM_depositUSDC() external {
         bytes32 key = foreignController.LIMIT_PSM_DEPOSIT();
 
-        deal(Base.USDC, address(almProxy), 100e6);
+        deal(Base.USDC, almProxy, 100e6);
 
         _assertState({
             token            : Base.USDC,
@@ -161,7 +230,7 @@ contract ForeignController_PSM_Deposit_Tests is PSM_TestBase {
 
         vm.record();
 
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         uint256 shares = foreignController.depositPSM(Base.USDC, 100e6);
 
         _assertReentrancyGuardWrittenToTwice();
@@ -183,10 +252,10 @@ contract ForeignController_PSM_Deposit_Tests is PSM_TestBase {
     function test_depositPSM_depositSUSDS() external {
         bytes32 key = foreignController.LIMIT_PSM_DEPOSIT();
 
-        deal(address(susdsBase), address(almProxy), 100e18);
+        deal(address(susds), almProxy, 100e18);
 
         _assertState({
-            token            : address(susdsBase),
+            token            : address(susds),
             proxyBalance     : 100e18,
             psmBalance       : 0,
             proxyShares      : 0,
@@ -198,15 +267,15 @@ contract ForeignController_PSM_Deposit_Tests is PSM_TestBase {
 
         vm.record();
 
-        vm.prank(relayer);
-        uint256 shares = foreignController.depositPSM(address(susdsBase), 100e18);
+        vm.prank(RELAYER);
+        uint256 shares = foreignController.depositPSM(address(susds), 100e18);
 
         _assertReentrancyGuardWrittenToTwice();
 
         assertEq(shares, 100.343092065533568746e18);  // Sanity check conversion at fork block
 
         _assertState({
-            token            : address(susdsBase),
+            token            : address(susds),
             proxyBalance     : 0,
             psmBalance       : 100e18,
             proxyShares      : shares,
@@ -224,64 +293,60 @@ contract ForeignController_PSM_Withdraw_Tests is PSM_TestBase {
     function test_withdrawPSM_reentrancy() external {
         _setControllerEntered();
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        foreignController.withdrawPSM(address(usdsBase), 100e18);
+        foreignController.withdrawPSM(address(usds), 100e18);
     }
 
     function test_withdrawPSM_notRelayer() external {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            RELAYER_ROLE
         ));
-        foreignController.withdrawPSM(address(usdsBase), 100e18);
+        foreignController.withdrawPSM(address(usds), 100e18);
     }
 
     function test_withdrawPSM_usdcZeroMaxAmount() external {
-        bytes32 withdrawKey      = foreignController.LIMIT_PSM_WITHDRAW();
-        bytes32 withdrawAssetKey = makeAddressKey(withdrawKey, Base.USDC);
+        bytes32 withdrawAssetKey = makeAddressKey(foreignController.LIMIT_PSM_WITHDRAW(), Base.USDC);
 
-        vm.prank(SPARK_EXECUTOR);
+        vm.prank(Base.SPARK_EXECUTOR);
         rateLimits.setRateLimitData(withdrawAssetKey, 0, 0);
 
         vm.expectRevert("RateLimits/zero-maxAmount");
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         foreignController.withdrawPSM(Base.USDC, 100e18);
     }
 
     function test_withdrawPSM_usdsZeroMaxAmount() external {
-        bytes32 withdrawKey      = foreignController.LIMIT_PSM_WITHDRAW();
-        bytes32 withdrawAssetKey = makeAddressKey(withdrawKey, address(usdsBase));
+        bytes32 withdrawAssetKey = makeAddressKey(foreignController.LIMIT_PSM_WITHDRAW(), address(usds));
 
-        vm.prank(SPARK_EXECUTOR);
+        vm.prank(Base.SPARK_EXECUTOR);
         rateLimits.setRateLimitData(withdrawAssetKey, 0, 0);
 
         vm.expectRevert("RateLimits/zero-maxAmount");
-        vm.prank(relayer);
-        foreignController.withdrawPSM(address(usdsBase), 100e18);
+        vm.prank(RELAYER);
+        foreignController.withdrawPSM(address(usds), 100e18);
     }
 
     function test_withdrawPSM_susdsZeroMaxAmount() external {
-        bytes32 withdrawKey      = foreignController.LIMIT_PSM_WITHDRAW();
-        bytes32 withdrawAssetKey = makeAddressKey(withdrawKey, address(susdsBase));
+        bytes32 withdrawAssetKey = makeAddressKey(foreignController.LIMIT_PSM_WITHDRAW(), address(susds));
 
-        vm.prank(SPARK_EXECUTOR);
+        vm.prank(Base.SPARK_EXECUTOR);
         rateLimits.setRateLimitData(withdrawAssetKey, 0, 0);
 
         vm.expectRevert("RateLimits/zero-maxAmount");
-        vm.prank(relayer);
-        foreignController.withdrawPSM(address(susdsBase), 100e18);
+        vm.prank(RELAYER);
+        foreignController.withdrawPSM(address(susds), 100e18);
     }
 
     function test_withdrawPSM_usdcRateLimitedBoundary() external {
-        bytes32 withdrawKey      = foreignController.LIMIT_PSM_WITHDRAW();
-        bytes32 withdrawAssetKey = makeAddressKey(withdrawKey, Base.USDC);
+        bytes32 withdrawAssetKey = makeAddressKey(foreignController.LIMIT_PSM_WITHDRAW(), Base.USDC);
 
-        vm.prank(SPARK_EXECUTOR);
+        vm.prank(Base.SPARK_EXECUTOR);
         rateLimits.setRateLimitData(withdrawAssetKey, 1_000_000e6, uint256(1_000_000e6) / 1 days);
 
-        deal(Base.USDC, address(almProxy), 1_000_000e6 + 1);
+        deal(Base.USDC, almProxy, 1_000_000e6 + 1);
 
-        vm.startPrank(relayer);
+        vm.startPrank(RELAYER);
 
         foreignController.depositPSM(Base.USDC, 1_000_000e6 + 1);
 
@@ -294,44 +359,42 @@ contract ForeignController_PSM_Withdraw_Tests is PSM_TestBase {
     }
 
     function test_withdrawPSM_usdsRateLimitedBoundary() external {
-        bytes32 withdrawKey      = foreignController.LIMIT_PSM_WITHDRAW();
-        bytes32 withdrawAssetKey = makeAddressKey(withdrawKey, address(usdsBase));
+        bytes32 withdrawAssetKey = makeAddressKey(foreignController.LIMIT_PSM_WITHDRAW(), address(usds));
 
-        vm.prank(SPARK_EXECUTOR);
+        vm.prank(Base.SPARK_EXECUTOR);
         rateLimits.setRateLimitData(withdrawAssetKey, 1_000_000e18, uint256(1_000_000e18) / 1 days);
 
-        deal(address(usdsBase), address(almProxy), 1_000_000e18 + 1);
+        deal(address(usds), almProxy, 1_000_000e18 + 1);
 
-        vm.startPrank(relayer);
+        vm.startPrank(RELAYER);
 
-        foreignController.depositPSM(address(usdsBase), 1_000_000e18 + 1);
+        foreignController.depositPSM(address(usds), 1_000_000e18 + 1);
 
         vm.expectRevert("RateLimits/rate-limit-exceeded");
-        foreignController.withdrawPSM(address(usdsBase), 1_000_000e18 + 1);
+        foreignController.withdrawPSM(address(usds), 1_000_000e18 + 1);
 
-        foreignController.withdrawPSM(address(usdsBase), 1_000_000e18);
+        foreignController.withdrawPSM(address(usds), 1_000_000e18);
 
         vm.stopPrank();
     }
 
     function test_withdrawPSM_susdsRateLimitedBoundary() external {
-        bytes32 withdrawKey      = foreignController.LIMIT_PSM_WITHDRAW();
-        bytes32 withdrawAssetKey = makeAddressKey(withdrawKey, address(susdsBase));
+        bytes32 withdrawAssetKey = makeAddressKey(foreignController.LIMIT_PSM_WITHDRAW(), address(susds));
 
-        vm.prank(SPARK_EXECUTOR);
+        vm.prank(Base.SPARK_EXECUTOR);
         rateLimits.setRateLimitData(withdrawAssetKey, 1_000_000e18, uint256(1_000_000e18) / 1 days);
 
         // NOTE: Need an extra wei because of rounding on conversion
-        deal(address(susdsBase), address(almProxy), 1_000_000e18 + 2);
+        deal(address(susds), almProxy, 1_000_000e18 + 2);
 
-        vm.startPrank(relayer);
+        vm.startPrank(RELAYER);
 
-        foreignController.depositPSM(address(susdsBase), 1_000_000e18 + 2);
+        foreignController.depositPSM(address(susds), 1_000_000e18 + 2);
 
         vm.expectRevert("RateLimits/rate-limit-exceeded");
-        foreignController.withdrawPSM(address(susdsBase), 1_000_000e18 + 1);
+        foreignController.withdrawPSM(address(susds), 1_000_000e18 + 1);
 
-        uint256 withdrawn = foreignController.withdrawPSM(address(susdsBase), 1_000_000e18);
+        uint256 withdrawn = foreignController.withdrawPSM(address(susds), 1_000_000e18);
 
         assertEq(withdrawn, 1_000_000e18);
 
@@ -341,12 +404,12 @@ contract ForeignController_PSM_Withdraw_Tests is PSM_TestBase {
     function test_withdrawPSM_withdrawUSDS() external {
         bytes32 key = foreignController.LIMIT_PSM_WITHDRAW();
 
-        deal(address(usdsBase), address(almProxy), 100e18);
-        vm.prank(relayer);
-        foreignController.depositPSM(address(usdsBase), 100e18);
+        deal(address(usds), almProxy, 100e18);
+        vm.prank(RELAYER);
+        foreignController.depositPSM(address(usds), 100e18);
 
         _assertState({
-            token            : address(usdsBase),
+            token            : address(usds),
             proxyBalance     : 0,
             psmBalance       : 101e18,
             proxyShares      : 100e18,
@@ -358,15 +421,15 @@ contract ForeignController_PSM_Withdraw_Tests is PSM_TestBase {
 
         vm.record();
 
-        vm.prank(relayer);
-        uint256 amountWithdrawn = foreignController.withdrawPSM(address(usdsBase), 100e18);
+        vm.prank(RELAYER);
+        uint256 amountWithdrawn = foreignController.withdrawPSM(address(usds), 100e18);
 
         _assertReentrancyGuardWrittenToTwice();
 
         assertEq(amountWithdrawn, 100e18);
 
         _assertState({
-            token            : address(usdsBase),
+            token            : address(usds),
             proxyBalance     : 100e18,
             psmBalance       : 1e18,  // From seeding USDS
             proxyShares      : 0,
@@ -380,9 +443,9 @@ contract ForeignController_PSM_Withdraw_Tests is PSM_TestBase {
     function test_withdrawPSM_withdrawUSDC() external {
         bytes32 key = foreignController.LIMIT_PSM_WITHDRAW();
 
-        deal(Base.USDC, address(almProxy), 100e6);
+        deal(Base.USDC, almProxy, 100e6);
 
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         foreignController.depositPSM(Base.USDC, 100e6);
 
         _assertState({
@@ -398,7 +461,7 @@ contract ForeignController_PSM_Withdraw_Tests is PSM_TestBase {
 
         vm.record();
 
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         uint256 amountWithdrawn = foreignController.withdrawPSM(Base.USDC, 100e6);
 
         _assertReentrancyGuardWrittenToTwice();
@@ -420,15 +483,15 @@ contract ForeignController_PSM_Withdraw_Tests is PSM_TestBase {
     function test_withdrawPSM_withdrawSUSDS() external {
         bytes32 key = foreignController.LIMIT_PSM_WITHDRAW();
 
-        deal(address(susdsBase), address(almProxy), 100e18);
+        deal(address(susds), almProxy, 100e18);
 
-        vm.prank(relayer);
-        uint256 shares = foreignController.depositPSM(address(susdsBase), 100e18);
+        vm.prank(RELAYER);
+        uint256 shares = foreignController.depositPSM(address(susds), 100e18);
 
         assertEq(shares, 100.343092065533568746e18);  // Sanity check conversion at fork block
 
         _assertState({
-            token            : address(susdsBase),
+            token            : address(susds),
             proxyBalance     : 0,
             psmBalance       : 100e18,
             proxyShares      : shares,
@@ -440,15 +503,15 @@ contract ForeignController_PSM_Withdraw_Tests is PSM_TestBase {
 
         vm.record();
 
-        vm.prank(relayer);
-        uint256 amountWithdrawn = foreignController.withdrawPSM(address(susdsBase), 100e18);
+        vm.prank(RELAYER);
+        uint256 amountWithdrawn = foreignController.withdrawPSM(address(susds), 100e18);
 
         _assertReentrancyGuardWrittenToTwice();
 
         assertEq(amountWithdrawn, 100e18 - 1);  // Rounding
 
         _assertState({
-            token            : address(susdsBase),
+            token            : address(susds),
             proxyBalance     : 100e18 - 1,  // Rounding
             psmBalance       : 1,           // Rounding
             proxyShares      : 0,

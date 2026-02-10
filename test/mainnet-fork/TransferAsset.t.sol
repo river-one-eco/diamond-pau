@@ -19,6 +19,7 @@ interface IERC20Like {
 
 abstract contract TransferAsset_TestBase is ForkTestBase {
 
+    IERC20Like internal constant USDC = IERC20Like(Ethereum.USDC);
     IERC20Like internal constant USDT = IERC20Like(Ethereum.USDT);
 
     address internal receiver = makeAddr("receiver");
@@ -55,25 +56,25 @@ contract MainnetController_TransferAsset_Tests is TransferAsset_TestBase {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            RELAYER_ROLE
         ));
         mainnetController.transferAsset(Ethereum.USDC, receiver, 1_000_000e6);
     }
 
     function test_transferAsset_zeroMaxAmount() external {
         vm.expectRevert("RateLimits/zero-maxAmount");
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         mainnetController.transferAsset(makeAddr("fake-token"), receiver, 1e18);
     }
 
     function test_transferAsset_rateLimitedBoundary() external {
-        deal(Ethereum.USDC, address(almProxy), 1_000_000e6 + 1);
+        deal(Ethereum.USDC, almProxy, 1_000_000e6 + 1);
 
         vm.expectRevert("RateLimits/rate-limit-exceeded");
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         mainnetController.transferAsset(Ethereum.USDC, receiver, 1_000_000e6 + 1);
 
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         mainnetController.transferAsset(Ethereum.USDC, receiver, 1_000_000e6);
     }
 
@@ -94,28 +95,28 @@ contract MainnetController_TransferAsset_Tests is TransferAsset_TestBase {
 
         vm.stopPrank();
 
-        deal(address(token), address(almProxy), 1_000_000e18);
+        deal(address(token), almProxy, 1_000_000e18);
 
         vm.expectRevert("TransferAssetLib/transfer-failed");
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         mainnetController.transferAsset(address(token), receiver, 1_000_000e18);
     }
 
     function test_transferAsset() external {
-        deal(Ethereum.USDC, address(almProxy), 1_000_000e6);
+        deal(Ethereum.USDC, almProxy, 1_000_000e6);
 
-        assertEq(usdc.balanceOf(receiver),          0);
-        assertEq(usdc.balanceOf(address(almProxy)), 1_000_000e6);
+        assertEq(USDC.balanceOf(receiver), 0);
+        assertEq(USDC.balanceOf(almProxy), 1_000_000e6);
 
         vm.record();
 
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         mainnetController.transferAsset(Ethereum.USDC, receiver, 1_000_000e6);
 
         _assertReentrancyGuardWrittenToTwice();
 
-        assertEq(usdc.balanceOf(receiver),          1_000_000e6);
-        assertEq(usdc.balanceOf(address(almProxy)), 0);
+        assertEq(USDC.balanceOf(receiver), 1_000_000e6);
+        assertEq(USDC.balanceOf(almProxy), 0);
     }
 
     function test_transferAsset_successNoReturnData() external {
@@ -133,16 +134,16 @@ contract MainnetController_TransferAsset_Tests is TransferAsset_TestBase {
 
         vm.stopPrank();
 
-        deal(Ethereum.USDT, address(almProxy), 1_000_000e6);
+        deal(Ethereum.USDT, almProxy, 1_000_000e6);
 
-        assertEq(USDT.balanceOf(receiver),          0);
-        assertEq(USDT.balanceOf(address(almProxy)), 1_000_000e6);
+        assertEq(USDT.balanceOf(receiver), 0);
+        assertEq(USDT.balanceOf(almProxy), 1_000_000e6);
 
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         mainnetController.transferAsset(Ethereum.USDT, receiver, 1_000_000e6);
 
-        assertEq(USDT.balanceOf(receiver),          1_000_000e6);
-        assertEq(USDT.balanceOf(address(almProxy)), 0);
+        assertEq(USDT.balanceOf(receiver), 1_000_000e6);
+        assertEq(USDT.balanceOf(almProxy), 0);
     }
 
 }

@@ -59,7 +59,7 @@ library CurveLib {
     bytes32 public constant LIMIT_WITHDRAW = keccak256("LIMIT_CURVE_WITHDRAW");
 
     /**********************************************************************************************/
-    /*** External functions                                                                     ***/
+    /*** External interactive functions                                                         ***/
     /**********************************************************************************************/
 
     function swap(
@@ -237,7 +237,7 @@ library CurveLib {
     }
 
     /**********************************************************************************************/
-    /*** Rate Limit helper functions                                                            ***/
+    /*** Internal interactive functions                                                         ***/
     /**********************************************************************************************/
 
     function _decreaseRateLimit(address rateLimits, bytes32 key, address pool, uint256 amount)
@@ -247,7 +247,7 @@ library CurveLib {
     }
 
     /**********************************************************************************************/
-    /*** Helper functions                                                                       ***/
+    /*** Internal view/pure functions                                                           ***/
     /**********************************************************************************************/
 
     function _absSubtraction(uint256 a, uint256 b) internal pure returns (uint256) {

@@ -26,12 +26,24 @@ interface IERC4626Like {
 
 library ERC4626Lib {
 
+    /**********************************************************************************************/
+    /*** Events                                                                                 ***/
+    /**********************************************************************************************/
+
     event MaxExchangeRateSet(address indexed token, uint256 maxExchangeRate);
+
+    /**********************************************************************************************/
+    /*** Constants                                                                              ***/
+    /**********************************************************************************************/
 
     bytes32 public constant LIMIT_DEPOSIT  = keccak256("LIMIT_4626_DEPOSIT");
     bytes32 public constant LIMIT_WITHDRAW = keccak256("LIMIT_4626_WITHDRAW");
 
     uint256 public constant EXCHANGE_RATE_PRECISION = 1e36;
+
+    /**********************************************************************************************/
+    /*** External interactive functions                                                         ***/
+    /**********************************************************************************************/
 
     function setMaxExchangeRate(
         mapping (address => uint256) storage maxExchangeRates,
@@ -134,6 +146,10 @@ library ERC4626Lib {
         _decreaseRateLimit(rateLimits, LIMIT_WITHDRAW, token, assets);
         _increaseRateLimit(rateLimits, LIMIT_DEPOSIT,  token, assets);
     }
+
+    /**********************************************************************************************/
+    /*** Internal interactive functions                                                         ***/
+    /**********************************************************************************************/
 
     function _decreaseRateLimit(address rateLimits, bytes32 key, address token, uint256 amount)
         internal

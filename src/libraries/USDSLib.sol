@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.21;
 
+import { Ethereum } from "../../lib/spark-address-registry/src/Ethereum.sol";
+
 import { IALMProxy }   from "../interfaces/IALMProxy.sol";
 import { IRateLimits } from "../interfaces/IRateLimits.sol";
 
@@ -24,13 +26,20 @@ interface IVaultLike {
 
 library USDSLib {
 
+    /**********************************************************************************************/
+    /*** Constants                                                                              ***/
+    /**********************************************************************************************/
+
     bytes32 public constant LIMIT_MINT = keccak256("LIMIT_USDS_MINT");
+
+    /**********************************************************************************************/
+    /*** External interactive functions                                                         ***/
+    /**********************************************************************************************/
 
     function mint(
         address proxy,
         address rateLimits,
         address vault,
-        address usds,
         uint256 usdsAmount
     )
         external
@@ -43,7 +52,7 @@ library USDSLib {
         // Transfer USDS from the buffer to the proxy.
         // Not need for ApprobeLib as we are transferring USDS with an expected transfer function.
         IALMProxy(proxy).doCall(
-            usds,
+            Ethereum.USDS,
             abi.encodeCall(
                 IERC20Like.transferFrom,
                 (IVaultLike(vault).buffer(), proxy, usdsAmount)
@@ -55,7 +64,6 @@ library USDSLib {
         address proxy,
         address rateLimits,
         address vault,
-        address usds,
         uint256 usdsAmount
     )
         external
@@ -65,7 +73,7 @@ library USDSLib {
         // Transfer USDS from the proxy to the buffer.
         // Not need for ApprobeLib as we are transferring USDS with an expected transfer function.
         IALMProxy(proxy).doCall(
-            usds,
+            Ethereum.USDS,
             abi.encodeCall(IERC20Like.transfer, (IVaultLike(vault).buffer(), usdsAmount))
         );
 

@@ -58,7 +58,7 @@ library CCTPLib {
     bytes32 public constant LIMIT_TO_DOMAIN = keccak256("LIMIT_USDC_TO_DOMAIN");
 
     /**********************************************************************************************/
-    /*** External functions                                                                     ***/
+    /*** External interactive functions                                                         ***/
     /**********************************************************************************************/
 
     function setMintRecipient(
@@ -116,7 +116,7 @@ library CCTPLib {
     }
 
     /**********************************************************************************************/
-    /*** Relayer helper functions                                                               ***/
+    /*** Internal interactive functions                                                         ***/
     /**********************************************************************************************/
 
     // NOTE: As USDC is the only asset transferred using CCTP, `ApproveLib` is unnecessary.
@@ -147,10 +147,6 @@ library CCTPLib {
 
         emit CCTPTransferInitiated(nonce, destinationDomain, mintRecipient, usdcAmount);
     }
-
-    /**********************************************************************************************/
-    /*** Rate Limit helper functions                                                            ***/
-    /**********************************************************************************************/
 
     function _decreaseRateLimit(address rateLimits, bytes32 key, uint256 amount) internal {
         IRateLimits(rateLimits).triggerRateLimitDecrease(key, amount);

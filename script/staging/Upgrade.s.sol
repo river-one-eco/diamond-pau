@@ -11,7 +11,6 @@ import { stdJson }  from "../../lib/forge-std/src/StdJson.sol";
 
 import { Base }      from "../../lib/spark-address-registry/src/Base.sol";
 import { Ethereum }  from "../../lib/spark-address-registry/src/Ethereum.sol";
-import { SparkLend } from "../../lib/spark-address-registry/src/SparkLend.sol";
 
 import { CCTPForwarder } from "../../lib/xchain-helpers/src/forwarders/CCTPForwarder.sol";
 
@@ -21,7 +20,7 @@ import { MainnetControllerInit as MainnetInit } from "../../deploy/MainnetContro
 
 import { ForeignController } from "../../src/ForeignController.sol";
 import { MainnetController } from "../../src/MainnetController.sol";
-import { RateLimitHelpers }  from "../../src/RateLimitHelpers.sol";
+import { makeAddressKey }    from "../../src/RateLimitHelpers.sol";
 import { RateLimits }        from "../../src/RateLimits.sol";
 
 interface IAccessControlLike {
@@ -71,65 +70,13 @@ contract UpgradeMainnetController is Script {
         MainnetInit.CheckAddressParams memory checkAddresses = MainnetInit.CheckAddressParams({
             admin      : inputConfig.readAddress(".admin"),
             proxy      : inputConfig.readAddress(".almProxy"),
-            rateLimits : inputConfig.readAddress(".rateLimits"),
-            vault      : inputConfig.readAddress(".allocatorVault"),
-            psm        : inputConfig.readAddress(".psmWrapper"),
-            daiUsds    : inputConfig.readAddress(".daiUsds"),
-            cctp       : inputConfig.readAddress(".cctpTokenMessenger")
+            rateLimits : inputConfig.readAddress(".rateLimits")
         });
-
-        MainnetInit.MintRecipient[]      memory mintRecipients      = new MainnetInit.MintRecipient[](1);
-        MainnetInit.LayerZeroRecipient[] memory layerZeroRecipients = new MainnetInit.LayerZeroRecipient[](0);
-        MainnetInit.MaxSlippageParams[]  memory maxSlippageParams   = new MainnetInit.MaxSlippageParams[](5);
 
         address baseAlmProxy = ScriptTools.readInput("base-staging").readAddress(".almProxy");
 
-        mintRecipients[0] = MainnetInit.MintRecipient({
-            domain        : CCTPForwarder.DOMAIN_ID_CIRCLE_BASE,
-            mintRecipient : bytes32(uint256(uint160(baseAlmProxy)))
-        });
-
-        maxSlippageParams[0] = MainnetInit.MaxSlippageParams({
-            pool        : Ethereum.ATOKEN_CORE_USDC,
-            maxSlippage : 0.9999e18
-        });
-        maxSlippageParams[1] = MainnetInit.MaxSlippageParams({
-            pool        : Ethereum.ATOKEN_CORE_USDS,
-            maxSlippage : 0.9999e18
-        });
-        maxSlippageParams[2] = MainnetInit.MaxSlippageParams({
-            pool        : SparkLend.USDC_SPTOKEN,
-            maxSlippage : 0.9999e18
-        });
-        maxSlippageParams[3] = MainnetInit.MaxSlippageParams({
-            pool        : SparkLend.USDT_SPTOKEN,
-            maxSlippage : 0.9999e18
-        });
-        maxSlippageParams[4] = MainnetInit.MaxSlippageParams({
-            pool        : Ethereum.CURVE_SUSDSUSDT,
-            maxSlippage : MainnetController(oldController).maxSlippages(Ethereum.CURVE_SUSDSUSDT)
-        });
-
         vm.startBroadcast();
-        MainnetInit.upgradeController(controllerInst, configAddresses, checkAddresses, mintRecipients, layerZeroRecipients, maxSlippageParams);
-
-        _setMaxExchangeRate(newController, Ethereum.SUSDS);
-        _setMaxExchangeRate(newController, Ethereum.SYRUP_USDC);
-        _setMaxExchangeRate(newController, Ethereum.SUSDE);
-
-        _onboardCurvePool({
-            controller_   : newController,
-            rateLimits_   : controllerInst.rateLimits,
-            pool          : Ethereum.CURVE_WEETHWETHNG,
-            maxSlippage   : 0.9985e18,
-            swapMax       : 0.1e18,
-            swapSlope     : uint256(0.1e18) / 1 days,
-            depositMax    : 0.1e18,
-            depositSlope  : uint256(0.1e18) / 1 days,
-            withdrawMax   : 0.1e18,
-            withdrawSlope : uint256(0.1e18) / 1 days
-        });
-
+        MainnetInit.upgradeController(controllerInst, configAddresses, checkAddresses);
         vm.stopBroadcast();
 
         console.log("ALMProxy updated at         ", controllerInst.almProxy);
@@ -167,10 +114,7 @@ contract UpgradeMainnetController is Script {
 
         if (swapMax != 0) {
             rateLimits.setRateLimitData(
-                RateLimitHelpers.makeAddressKey(
-                    controller.LIMIT_CURVE_SWAP(),
-                    pool
-                ),
+                makeAddressKey(controller.LIMIT_CURVE_SWAP(), pool),
                 swapMax,
                 swapSlope
             );
@@ -178,10 +122,7 @@ contract UpgradeMainnetController is Script {
 
         if (depositMax != 0) {
             rateLimits.setRateLimitData(
-                RateLimitHelpers.makeAddressKey(
-                    controller.LIMIT_CURVE_DEPOSIT(),
-                    pool
-                ),
+                makeAddressKey(controller.LIMIT_CURVE_DEPOSIT(), pool),
                 depositMax,
                 depositSlope
             );
@@ -189,10 +130,7 @@ contract UpgradeMainnetController is Script {
 
         if (withdrawMax != 0) {
             rateLimits.setRateLimitData(
-                RateLimitHelpers.makeAddressKey(
-                    controller.LIMIT_CURVE_WITHDRAW(),
-                    pool
-                ),
+                makeAddressKey(controller.LIMIT_CURVE_WITHDRAW(), pool),
                 withdrawMax,
                 withdrawSlope
             );
@@ -236,40 +174,15 @@ contract UpgradeBaseController is Script {
         });
 
         ForeignInit.CheckAddressParams memory checkAddresses = ForeignInit.CheckAddressParams({
-            admin : inputConfig.readAddress(".admin"),
-            psm   : inputConfig.readAddress(".psm"),
-            cctp  : inputConfig.readAddress(".cctpTokenMessenger"),
-            usdc  : inputConfig.readAddress(".usdc"),
-            susds : inputConfig.readAddress(".susds"),
-            usds  : inputConfig.readAddress(".usds")
+            admin      : inputConfig.readAddress(".admin"),
+            proxy      : inputConfig.readAddress(".almProxy"),
+            rateLimits : inputConfig.readAddress(".rateLimits")
         });
-
-        ForeignInit.MintRecipient[]      memory mintRecipients      = new ForeignInit.MintRecipient[](1);
-        ForeignInit.LayerZeroRecipient[] memory layerZeroRecipients = new ForeignInit.LayerZeroRecipient[](0);
-        ForeignInit.MaxSlippageParams[]  memory maxSlippageParams   = new ForeignInit.MaxSlippageParams[](1);
 
         address mainnetAlmProxy = ScriptTools.readInput("mainnet-staging").readAddress(".almProxy");
 
-        mintRecipients[0] = ForeignInit.MintRecipient({
-            domain        : CCTPForwarder.DOMAIN_ID_CIRCLE_ETHEREUM,
-            mintRecipient : bytes32(uint256(uint160(mainnetAlmProxy)))
-        });
-
-        maxSlippageParams[0] = ForeignInit.MaxSlippageParams({
-            pool        : Base.ATOKEN_USDC,
-            maxSlippage : 0.9999e18
-        });
-
         vm.startBroadcast();
-
-        ForeignInit.upgradeController(controllerInst, configAddresses, checkAddresses, mintRecipients, layerZeroRecipients, maxSlippageParams, true);
-
-        ForeignController(newController).setMaxExchangeRate(
-            Base.MORPHO_VAULT_SUSDC,
-            1  * 10 ** IERC20(Base.MORPHO_VAULT_SUSDC).decimals(),
-            10 * 10 ** IERC20(IERC4626(Base.MORPHO_VAULT_SUSDC).asset()).decimals()
-        );
-
+        ForeignInit.upgradeController(controllerInst, configAddresses, checkAddresses);
         vm.stopBroadcast();
 
         console.log("ALMProxy updated at         ", controllerInst.almProxy);

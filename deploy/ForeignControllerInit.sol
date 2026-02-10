@@ -8,20 +8,6 @@ import { IRateLimits } from "../src/interfaces/IRateLimits.sol";
 
 import { ControllerInstance } from "./ControllerInstance.sol";
 
-interface IPSM3Like {
-
-    function susds() external view returns (address);
-
-    function totalAssets() external view returns (uint256);
-
-    function totalShares() external view returns (uint256);
-
-    function usdc() external view returns (address);
-
-    function usds() external view returns (address);
-
-}
-
 library ForeignControllerInit {
 
     /**********************************************************************************************/
@@ -30,32 +16,14 @@ library ForeignControllerInit {
 
     struct CheckAddressParams {
         address admin;
-        address psm;
-        address cctp;
-        address usdc;
-        address susds;
-        address usds;
+        address proxy;
+        address rateLimits;
     }
 
     struct ConfigAddressParams {
         address   freezer;
         address[] relayers;
-        address   oldController;
-    }
-
-    struct MintRecipient {
-        uint32  domain;
-        bytes32 mintRecipient;
-    }
-
-    struct LayerZeroRecipient {
-        uint32  destinationEndpointId;
-        bytes32 recipient;
-    }
-
-    struct MaxSlippageParams {
-        address pool;
-        uint256 maxSlippage;
+        address   oldController; // TODO: Remove this field
     }
 
     bytes32 constant DEFAULT_ADMIN_ROLE = 0x00;
@@ -65,13 +33,9 @@ library ForeignControllerInit {
     /**********************************************************************************************/
 
     function initAlmSystem(
-        ControllerInstance   memory controllerInst,
-        ConfigAddressParams  memory configAddresses,
-        CheckAddressParams   memory checkAddresses,
-        MintRecipient[]      memory mintRecipients,
-        LayerZeroRecipient[] memory layerZeroRecipients,
-        MaxSlippageParams[]  memory maxSlippageParams,
-        bool                 checkPsm
+        ControllerInstance  memory controllerInst,
+        ConfigAddressParams memory configAddresses,
+        CheckAddressParams  memory checkAddresses
     )
         internal
     {
@@ -82,21 +46,17 @@ library ForeignControllerInit {
 
         // Step 2: Initialize the controller
 
-        _initController(controllerInst, configAddresses, checkAddresses, mintRecipients, layerZeroRecipients, maxSlippageParams, checkPsm);
+        _initController(controllerInst, configAddresses, checkAddresses);
     }
 
     function upgradeController(
-        ControllerInstance   memory controllerInst,
-        ConfigAddressParams  memory configAddresses,
-        CheckAddressParams   memory checkAddresses,
-        MintRecipient[]      memory mintRecipients,
-        LayerZeroRecipient[] memory layerZeroRecipients,
-        MaxSlippageParams[]  memory maxSlippageParams,
-        bool                 checkPsm
+        ControllerInstance  memory controllerInst,
+        ConfigAddressParams memory configAddresses,
+        CheckAddressParams  memory checkAddresses
     )
         internal
     {
-        _initController(controllerInst, configAddresses, checkAddresses, mintRecipients, layerZeroRecipients, maxSlippageParams, checkPsm);
+        _initController(controllerInst, configAddresses, checkAddresses);
 
         IALMProxy   almProxy   = IALMProxy(controllerInst.almProxy);
         IRateLimits rateLimits = IRateLimits(controllerInst.rateLimits);
@@ -115,73 +75,34 @@ library ForeignControllerInit {
     /**********************************************************************************************/
 
     function _initController(
-        ControllerInstance   memory controllerInst,
-        ConfigAddressParams  memory configAddresses,
-        CheckAddressParams   memory checkAddresses,
-        MintRecipient[]      memory mintRecipients,
-        LayerZeroRecipient[] memory layerZeroRecipients,
-        MaxSlippageParams[]  memory maxSlippageParams,
-        bool                 checkPsm
+        ControllerInstance  memory controllerInst,
+        ConfigAddressParams memory configAddresses,
+        CheckAddressParams  memory checkAddresses
     )
         private
     {
         // Step 1: Perform controller sanity checks
 
-        ForeignController newController = ForeignController(controllerInst.controller);
+        ForeignController controller = ForeignController(controllerInst.controller);
 
-        require(newController.hasRole(DEFAULT_ADMIN_ROLE, checkAddresses.admin), "ForeignControllerInit/incorrect-admin-controller");
+        require(controller.hasRole(DEFAULT_ADMIN_ROLE, checkAddresses.admin), "ForeignControllerInit/incorrect-admin-controller");
 
-        require(address(newController.proxy())      == controllerInst.almProxy,   "ForeignControllerInit/incorrect-almProxy");
-        require(address(newController.rateLimits()) == controllerInst.rateLimits, "ForeignControllerInit/incorrect-rateLimits");
+        require(controller.proxy()      == controllerInst.almProxy,   "ForeignControllerInit/incorrect-almProxy");
+        require(controller.rateLimits() == controllerInst.rateLimits, "ForeignControllerInit/incorrect-rateLimits");
 
-        require(address(newController.psm())  == checkAddresses.psm,  "ForeignControllerInit/incorrect-psm");
-        require(address(newController.usdc()) == checkAddresses.usdc, "ForeignControllerInit/incorrect-usdc");
-        require(address(newController.cctp()) == checkAddresses.cctp, "ForeignControllerInit/incorrect-cctp");
+        require(configAddresses.oldController != address(controller), "ForeignControllerInit/old-controller-is-new-controller");
 
-        require(configAddresses.oldController != address(newController), "ForeignControllerInit/old-controller-is-new-controller");
-
-        // Step 2: Perform PSM sanity checks
-
-        if (checkPsm) {
-            IPSM3Like psm = IPSM3Like(checkAddresses.psm);
-
-            require(psm.totalAssets() >= 1e18, "ForeignControllerInit/psm-totalAssets-not-seeded");
-            require(psm.totalShares() >= 1e18, "ForeignControllerInit/psm-totalShares-not-seeded");
-
-            require(psm.usdc()  == checkAddresses.usdc,  "ForeignControllerInit/psm-incorrect-usdc");
-            require(psm.usds()  == checkAddresses.usds,  "ForeignControllerInit/psm-incorrect-usds");
-            require(psm.susds() == checkAddresses.susds, "ForeignControllerInit/psm-incorrect-susds");
-        }
-
-        // Step 3: Configure ACL permissions controller, almProxy, and rateLimits
+        // Step 2: Configure ACL permissions controller, almProxy, and rateLimits
 
         IALMProxy   almProxy   = IALMProxy(controllerInst.almProxy);
         IRateLimits rateLimits = IRateLimits(controllerInst.rateLimits);
 
-        almProxy.grantRole(almProxy.CONTROLLER(),        address(newController));
-        newController.grantRole(newController.FREEZER(), configAddresses.freezer);
-        rateLimits.grantRole(rateLimits.CONTROLLER(),    address(newController));
+        almProxy.grantRole(almProxy.CONTROLLER(),     address(controller));
+        controller.grantRole(controller.FREEZER(),    configAddresses.freezer);
+        rateLimits.grantRole(rateLimits.CONTROLLER(), address(controller));
 
         for (uint256 i; i < configAddresses.relayers.length; ++i) {
-            newController.grantRole(newController.RELAYER(), configAddresses.relayers[i]);
-        }
-
-        // Step 4: Configure the mint recipients on other domains
-
-        for (uint256 i; i < mintRecipients.length; ++i) {
-            newController.setMintRecipient(mintRecipients[i].domain, mintRecipients[i].mintRecipient);
-        }
-
-        // Step 5: Configure LayerZero recipients
-
-        for (uint256 i; i < layerZeroRecipients.length; ++i) {
-            newController.setLayerZeroRecipient(layerZeroRecipients[i].destinationEndpointId, layerZeroRecipients[i].recipient);
-        }
-
-        // Step 6: Configure max slippage
-
-        for (uint256 i; i < maxSlippageParams.length; ++i) {
-            newController.setMaxSlippage(maxSlippageParams[i].pool, maxSlippageParams[i].maxSlippage);
+            controller.grantRole(controller.RELAYER(), configAddresses.relayers[i]);
         }
     }
 

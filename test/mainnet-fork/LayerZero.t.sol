@@ -11,10 +11,7 @@ import { ReentrancyGuard } from "../../lib/openzeppelin-contracts/contracts/util
 import { Ethereum } from "../../lib/spark-address-registry/src/Ethereum.sol";
 import { Arbitrum } from "../../lib/spark-address-registry/src/Arbitrum.sol";
 
-import { PSM3Deploy } from "../../lib/spark-psm/deploy/PSM3Deploy.sol";
-
-import { CCTPForwarder } from "../../lib/xchain-helpers/src/forwarders/CCTPForwarder.sol";
-import { DomainHelpers } from "../../lib/xchain-helpers/src/testing/Domain.sol";
+import { Domain, DomainHelpers } from "../../lib/xchain-helpers/src/testing/Domain.sol";
 
 import { ForeignControllerDeploy } from "../../deploy/ControllerDeploy.sol";
 import { ControllerInstance }      from "../../deploy/ControllerInstance.sol";
@@ -67,12 +64,6 @@ interface ILayerZeroLike {
 
 }
 
-interface IPSM3Like {
-
-    function setPocket(address pocket) external;
-
-}
-
 abstract contract LayerZero_TestBase is ForkTestBase {
 
     address internal constant USDT_OFT = 0x6C96dE32CEa08842dcc4058c14d3aaAD7Fa41dee;
@@ -101,13 +92,13 @@ contract MainnetController_LayerZero_TransferToken_Tests is LayerZero_TestBase {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            RELAYER_ROLE
         ));
         mainnetController.transferTokenLayerZero(USDT_OFT, 1e6, 30110);
     }
 
     function test_transferTokenLayerZero_zeroMaxAmount() external {
-        vm.startPrank(SPARK_PROXY);
+        vm.startPrank(Ethereum.SPARK_PROXY);
 
         rateLimits.setRateLimitData(
             makeAddressUint32Key(
@@ -127,12 +118,12 @@ contract MainnetController_LayerZero_TransferToken_Tests is LayerZero_TestBase {
         vm.stopPrank();
 
         vm.expectRevert("RateLimits/zero-maxAmount");
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         mainnetController.transferTokenLayerZero(USDT_OFT, 1e6, DESTINATION_ENDPOINT_ID);
     }
 
     function test_transferTokenLayerZero_rateLimitedBoundary() external {
-        vm.startPrank(SPARK_PROXY);
+        vm.startPrank(Ethereum.SPARK_PROXY);
 
         bytes32 target = bytes32(uint256(uint160(makeAddr("layerZeroRecipient"))));
 
@@ -151,8 +142,8 @@ contract MainnetController_LayerZero_TransferToken_Tests is LayerZero_TestBase {
         vm.stopPrank();
 
         // Setup token balances
-        deal(Ethereum.USDT, address(almProxy), 10_000_000e6);
-        deal(relayer, 1 ether);  // Gas cost for LayerZero
+        deal(Ethereum.USDT, almProxy, 10_000_000e6);
+        deal(RELAYER, 1 ether);  // Gas cost for LayerZero
 
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200_000, 0);
 
@@ -169,14 +160,14 @@ contract MainnetController_LayerZero_TransferToken_Tests is LayerZero_TestBase {
         ILayerZeroLike.MessagingFee memory fee = ILayerZeroLike(USDT_OFT).quoteSend(sendParams, false);
 
         vm.expectRevert("RateLimits/rate-limit-exceeded");
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         mainnetController.transferTokenLayerZero{value: fee.nativeFee}(
             USDT_OFT,
             10_000_000e6 + 1,
             DESTINATION_ENDPOINT_ID
         );
 
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         mainnetController.transferTokenLayerZero{value: fee.nativeFee}(
             USDT_OFT,
             10_000_000e6,
@@ -186,7 +177,7 @@ contract MainnetController_LayerZero_TransferToken_Tests is LayerZero_TestBase {
 
     function test_transferTokenLayerZero_recipientNotSet() external {
         // Set up rate limit, but forget to set recipient
-        vm.startPrank(SPARK_PROXY);
+        vm.startPrank(Ethereum.SPARK_PROXY);
 
         rateLimits.setRateLimitData(
             makeAddressUint32Key(
@@ -216,10 +207,10 @@ contract MainnetController_LayerZero_TransferToken_Tests is LayerZero_TestBase {
 
         ILayerZeroLike.MessagingFee memory fee = ILayerZeroLike(USDT_OFT).quoteSend(sendParams, false);
 
-        deal(relayer, fee.nativeFee);
+        deal(RELAYER, fee.nativeFee);
 
         vm.expectRevert("LayerZeroLib/recipient-not-set");
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         mainnetController.transferTokenLayerZero{value: fee.nativeFee}(
             USDT_OFT,
             10_000_000e6,
@@ -228,7 +219,7 @@ contract MainnetController_LayerZero_TransferToken_Tests is LayerZero_TestBase {
     }
 
     function test_transferTokenLayerZero() external {
-        vm.startPrank(SPARK_PROXY);
+        vm.startPrank(Ethereum.SPARK_PROXY);
 
         bytes32 key = makeAddressUint32Key(
             mainnetController.LIMIT_LAYERZERO_TRANSFER(),
@@ -245,14 +236,14 @@ contract MainnetController_LayerZero_TransferToken_Tests is LayerZero_TestBase {
         vm.stopPrank();
 
         // Setup token balances
-        deal(Ethereum.USDT, address(almProxy), 10_000_000e6);
-        deal(relayer, 1 ether);  // Gas cost for LayerZero
+        deal(Ethereum.USDT, almProxy, 10_000_000e6);
+        deal(RELAYER, 1 ether);  // Gas cost for LayerZero
 
         uint256 oftBalanceBefore = USDT.balanceOf(USDT_OFT);
 
-        assertEq(relayer.balance,                     1 ether);
+        assertEq(RELAYER.balance,                     1 ether);
         assertEq(rateLimits.getCurrentRateLimit(key), 10_000_000e6);
-        assertEq(USDT.balanceOf(address(almProxy)),   10_000_000e6);
+        assertEq(USDT.balanceOf(almProxy),   10_000_000e6);
 
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200_000, 0);
 
@@ -274,12 +265,12 @@ contract MainnetController_LayerZero_TransferToken_Tests is LayerZero_TestBase {
         emit ILayerZeroLike.OFTSent(
             bytes32(0xb6ebf135f758657b482818d84091e50f1af1cb378bd6f4e013f45dfa6f860cd6),
             DESTINATION_ENDPOINT_ID,
-            address(almProxy),
+            almProxy,
             10_000_000e6,
             10_000_000e6
         );
 
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         mainnetController.transferTokenLayerZero{value: fee.nativeFee}(
             USDT_OFT,
             10_000_000e6,
@@ -288,9 +279,9 @@ contract MainnetController_LayerZero_TransferToken_Tests is LayerZero_TestBase {
 
         _assertReentrancyGuardWrittenToTwice();
 
-        assertEq(relayer.balance,                     1 ether - fee.nativeFee);
+        assertEq(RELAYER.balance,                     1 ether - fee.nativeFee);
         assertEq(USDT.balanceOf(USDT_OFT),            oftBalanceBefore + 10_000_000e6);
-        assertEq(USDT.balanceOf(address(almProxy)),   0);
+        assertEq(USDT.balanceOf(almProxy),            0);
         assertEq(rateLimits.getCurrentRateLimit(key), 0);
     }
 
@@ -300,120 +291,46 @@ abstract contract ArbitrumChain_LayerZero_TestBase is ForkTestBase {
 
     using DomainHelpers for *;
 
-    /**********************************************************************************************/
-    /*** Constants/state variables                                                              ***/
-    /**********************************************************************************************/
+    address internal constant USDT_OFT = 0x14E4A1B13bf7F943c8ff7C51fb60FA964A298D92;
+    address internal constant USDT0    = 0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9;
 
-    address internal pocket = makeAddr("pocket");
-
-    /**********************************************************************************************/
-    /*** Arbitrum addresses                                                                     ***/
-    /**********************************************************************************************/
-
-    address internal constant CCTP_MESSENGER_ARB = Arbitrum.CCTP_TOKEN_MESSENGER;
-    address internal constant SPARK_EXECUTOR     = Arbitrum.SPARK_EXECUTOR;
-    address internal constant SSR_ORACLE         = Arbitrum.SSR_AUTH_ORACLE;
-    address internal constant USDT_OFT           = 0x14E4A1B13bf7F943c8ff7C51fb60FA964A298D92;
-    address internal constant USDT0              = 0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9;
-
-    /**********************************************************************************************/
-    /*** ALM system deployments                                                                 ***/
-    /**********************************************************************************************/
+    uint32 internal constant DESTINATION_ENDPOINT_ID = 30101;  // Ethereum EID
 
     ALMProxy          internal foreignAlmProxy;
     RateLimits        internal foreignRateLimits;
     ForeignController internal foreignController;
 
-    /**********************************************************************************************/
-    /*** Casted addresses for testing                                                           ***/
-    /**********************************************************************************************/
-
-    uint32 internal constant DESTINATION_ENDPOINT_ID = 30101;  // Ethereum EID
-
-    IERC20Like internal constant USDC_ARB = IERC20Like(Arbitrum.USDC);
-
-    address internal usdsArb;
-    address internal susdsArb;
-
-    address internal psmArb;
+    Domain internal destination;
 
     function setUp() public override virtual {
         super.setUp();
 
-        /*** Step 1: Set up environment and deploy mocks ***/
-
         destination = getChain("arbitrum_one").createSelectFork(341038130);  // May 27, 2025
 
-        usdsArb  = address(new ERC20Mock());
-        susdsArb = address(new ERC20Mock());
-
-        /*** Step 2: Deploy and configure PSM with a pocket ***/
-
-        deal(usdsArb, address(this), 1e18);  // For seeding PSM during deployment
-
-        psmArb = PSM3Deploy.deploy(
-            SPARK_EXECUTOR, Arbitrum.USDC, usdsArb, susdsArb, SSR_ORACLE
-        );
-
-        vm.prank(SPARK_EXECUTOR);
-        IPSM3Like(psmArb).setPocket(pocket);
-
-        vm.prank(pocket);
-        USDC_ARB.approve(psmArb, type(uint256).max);
-
-        /*** Step 3: Deploy and configure ALM system ***/
-
-        ControllerInstance memory controllerInst = ForeignControllerDeploy.deployFull({
-            admin : SPARK_EXECUTOR,
-            psm   : psmArb,
-            usdc  : Arbitrum.USDC,
-            cctp  : CCTP_MESSENGER_ARB
-        });
+        ControllerInstance memory controllerInst = ForeignControllerDeploy.deployFull(Arbitrum.SPARK_EXECUTOR);
 
         foreignAlmProxy   = ALMProxy(payable(controllerInst.almProxy));
         foreignRateLimits = RateLimits(controllerInst.rateLimits);
         foreignController = ForeignController(controllerInst.controller);
 
         address[] memory relayers = new address[](1);
-        relayers[0] = relayer;
+        relayers[0] = RELAYER;
 
         ForeignControllerInit.ConfigAddressParams memory configAddresses = ForeignControllerInit.ConfigAddressParams({
-            freezer       : freezer,
+            freezer       : FREEZER,
             relayers      : relayers,
             oldController : address(0)
         });
 
         ForeignControllerInit.CheckAddressParams memory checkAddresses = ForeignControllerInit.CheckAddressParams({
-            admin : SPARK_EXECUTOR,
-            psm   : psmArb,
-            cctp  : CCTP_MESSENGER_ARB,
-            usdc  : Arbitrum.USDC,
-            susds : susdsArb,
-            usds  : usdsArb
+            admin      : Arbitrum.SPARK_EXECUTOR,
+            proxy      : address(foreignAlmProxy),
+            rateLimits : address(foreignRateLimits)
         });
 
-        ForeignControllerInit.MintRecipient[] memory mintRecipients = new ForeignControllerInit.MintRecipient[](1);
+        vm.startPrank(Arbitrum.SPARK_EXECUTOR);
 
-        mintRecipients[0] = ForeignControllerInit.MintRecipient({
-            domain        : CCTPForwarder.DOMAIN_ID_CIRCLE_ETHEREUM,
-            mintRecipient : bytes32(uint256(uint160(address(almProxy))))
-        });
-
-        ForeignControllerInit.LayerZeroRecipient[] memory layerZeroRecipients = new ForeignControllerInit.LayerZeroRecipient[](0);
-
-        ForeignControllerInit.MaxSlippageParams[] memory maxSlippageParams = new ForeignControllerInit.MaxSlippageParams[](0);
-
-        vm.startPrank(SPARK_EXECUTOR);
-
-        ForeignControllerInit.initAlmSystem(
-            controllerInst,
-            configAddresses,
-            checkAddresses,
-            mintRecipients,
-            layerZeroRecipients,
-            maxSlippageParams,
-            true
-        );
+        ForeignControllerInit.initAlmSystem(controllerInst, configAddresses, checkAddresses);
 
         vm.stopPrank();
     }
@@ -448,13 +365,13 @@ contract ForeignController_LayerZero_TransferToken_Tests is ArbitrumChain_LayerZ
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            RELAYER_ROLE
         ));
         foreignController.transferTokenLayerZero(USDT_OFT, 1e6, DESTINATION_ENDPOINT_ID);
     }
 
     function test_transferTokenLayerZero_zeroMaxAmount() external {
-        vm.startPrank(SPARK_EXECUTOR);
+        vm.startPrank(Arbitrum.SPARK_EXECUTOR);
 
         foreignRateLimits.setRateLimitData(
             makeAddressUint32Key(
@@ -474,12 +391,12 @@ contract ForeignController_LayerZero_TransferToken_Tests is ArbitrumChain_LayerZ
         vm.stopPrank();
 
         vm.expectRevert("RateLimits/zero-maxAmount");
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         foreignController.transferTokenLayerZero(USDT_OFT, 1e6, DESTINATION_ENDPOINT_ID);
     }
 
     function test_transferTokenLayerZero_rateLimitedBoundary() external {
-        vm.startPrank(SPARK_EXECUTOR);
+        vm.startPrank(Arbitrum.SPARK_EXECUTOR);
 
         bytes32 target = bytes32(uint256(uint160(makeAddr("layerZeroRecipient"))));
 
@@ -499,7 +416,7 @@ contract ForeignController_LayerZero_TransferToken_Tests is ArbitrumChain_LayerZ
 
         // Setup token balances
         deal(USDT0, address(foreignAlmProxy), 10_000_000e6);
-        deal(relayer, 1 ether);  // Gas cost for LayerZero
+        deal(RELAYER, 1 ether);  // Gas cost for LayerZero
 
         bytes memory options = OptionsBuilder.newOptions().addExecutorLzReceiveOption(200_000, 0);
 
@@ -516,14 +433,14 @@ contract ForeignController_LayerZero_TransferToken_Tests is ArbitrumChain_LayerZ
         ILayerZeroLike.MessagingFee memory fee = ILayerZeroLike(USDT_OFT).quoteSend(sendParams, false);
 
         vm.expectRevert("RateLimits/rate-limit-exceeded");
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         foreignController.transferTokenLayerZero{value: fee.nativeFee}(
             USDT_OFT,
             10_000_000e6 + 1,
             DESTINATION_ENDPOINT_ID
         );
 
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         foreignController.transferTokenLayerZero{value: fee.nativeFee}(
             USDT_OFT,
             10_000_000e6,
@@ -533,7 +450,7 @@ contract ForeignController_LayerZero_TransferToken_Tests is ArbitrumChain_LayerZ
 
     function test_transferTokenLayerZero_recipientNotSet() external {
         // Set up rate limit, but forget to set recipient
-        vm.startPrank(SPARK_EXECUTOR);
+        vm.startPrank(Arbitrum.SPARK_EXECUTOR);
 
         foreignRateLimits.setRateLimitData(
             makeAddressUint32Key(
@@ -563,10 +480,10 @@ contract ForeignController_LayerZero_TransferToken_Tests is ArbitrumChain_LayerZ
 
         ILayerZeroLike.MessagingFee memory fee = ILayerZeroLike(USDT_OFT).quoteSend(sendParams, false);
 
-        deal(relayer, fee.nativeFee);
+        deal(RELAYER, fee.nativeFee);
 
         vm.expectRevert("LayerZeroLib/recipient-not-set");
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         foreignController.transferTokenLayerZero{value: fee.nativeFee}(
             USDT_OFT,
             10_000_000e6,
@@ -575,7 +492,7 @@ contract ForeignController_LayerZero_TransferToken_Tests is ArbitrumChain_LayerZ
     }
 
     function test_transferTokenLayerZero() external {
-        vm.startPrank(SPARK_EXECUTOR);
+        vm.startPrank(Arbitrum.SPARK_EXECUTOR);
 
         bytes32 key = makeAddressUint32Key(
             foreignController.LIMIT_LAYERZERO_TRANSFER(),
@@ -593,9 +510,9 @@ contract ForeignController_LayerZero_TransferToken_Tests is ArbitrumChain_LayerZ
 
         // Setup token balances
         deal(USDT0, address(foreignAlmProxy), 10_000_000e6);
-        deal(relayer, 1 ether);  // Gas cost for LayerZero
+        deal(RELAYER, 1 ether);  // Gas cost for LayerZero
 
-        assertEq(relayer.balance,                                       1 ether);
+        assertEq(RELAYER.balance,                                       1 ether);
         assertEq(foreignRateLimits.getCurrentRateLimit(key),            10_000_000e6);
         assertEq(IERC20Like(USDT0).balanceOf(address(foreignAlmProxy)), 10_000_000e6);
 
@@ -624,7 +541,7 @@ contract ForeignController_LayerZero_TransferToken_Tests is ArbitrumChain_LayerZ
             10_000_000e6
         );
 
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         foreignController.transferTokenLayerZero{value: fee.nativeFee}(
             USDT_OFT,
             10_000_000e6,
@@ -633,7 +550,7 @@ contract ForeignController_LayerZero_TransferToken_Tests is ArbitrumChain_LayerZ
 
         _assertReentrancyGuardWrittenToTwice(address(foreignController));
 
-        assertEq(relayer.balance,                                       1 ether - fee.nativeFee);
+        assertEq(RELAYER.balance,                                       1 ether - fee.nativeFee);
         assertEq(foreignRateLimits.getCurrentRateLimit(key),            0);
         assertEq(IERC20Like(USDT0).balanceOf(address(foreignAlmProxy)), 0);
     }

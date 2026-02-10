@@ -53,6 +53,10 @@ interface IWETHLike {
 // NOTE: This library is is specifically for Mainnet Ethereum.
 library WEETHLib {
 
+    /**********************************************************************************************/
+    /*** Constants                                                                              ***/
+    /**********************************************************************************************/
+
     bytes32 public constant LIMIT_DEPOSIT          = keccak256("LIMIT_WEETH_DEPOSIT");
     bytes32 public constant LIMIT_REQUEST_WITHDRAW = keccak256("LIMIT_WEETH_REQUEST_WITHDRAW");
 

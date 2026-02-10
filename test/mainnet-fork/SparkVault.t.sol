@@ -11,6 +11,7 @@ import { SparkVault } from "../../lib/spark-vaults-v2/src/SparkVault.sol";
 import { makeAddressAddressKey, makeAddressKey } from "../../src/RateLimitHelpers.sol";
 
 import { ForkTestBase } from "./ForkTestBase.t.sol";
+import { PSM_TestBase } from "./PSMCalls.t.sol";
 
 interface IERC20Like {
 
@@ -30,6 +31,7 @@ abstract contract SparkVault_TestBase is ForkTestBase {
         uint256 vaultTotalSupply;
     }
 
+    IERC20Like internal constant DAI = IERC20Like(Ethereum.DAI);
     IERC20Like internal constant USDC = IERC20Like(Ethereum.USDC);
 
     bytes32 internal constant LIMIT_SPARK_VAULT_TAKE = keccak256("LIMIT_SPARK_VAULT_TAKE");
@@ -38,35 +40,33 @@ abstract contract SparkVault_TestBase is ForkTestBase {
 
     bytes32 internal takeKey;
 
-    SparkVault internal sparkVault;
+    address internal sparkVault;
 
     function setUp() public virtual override {
         super.setUp();
 
-        sparkVault = SparkVault(
-            address(new ERC1967Proxy(
-                address(new SparkVault()),
-                abi.encodeCall(
-                    SparkVault.initialize,
-                    (Ethereum.USDC, "Spark Savings USDC V2", "spUSDC", Ethereum.SPARK_PROXY)
-                )
-            ))
-        );
+        sparkVault = address(new ERC1967Proxy(
+            address(new SparkVault()),
+            abi.encodeCall(
+                SparkVault.initialize,
+                (Ethereum.USDC, "Spark Savings USDC V2", "spUSDC", Ethereum.SPARK_PROXY)
+            )
+        ));
 
-        takeKey = makeAddressKey(LIMIT_SPARK_VAULT_TAKE, address(sparkVault));
+        takeKey = makeAddressKey(LIMIT_SPARK_VAULT_TAKE, sparkVault);
 
         vm.startPrank(Ethereum.SPARK_PROXY);
-        sparkVault.grantRole(sparkVault.TAKER_ROLE(), address(almProxy));
+        SparkVault(sparkVault).grantRole(SparkVault(sparkVault).TAKER_ROLE(), almProxy);
         rateLimits.setRateLimitData(takeKey, 1_000_000e6, uint256(1_000_000e6) / 1 days);
         vm.stopPrank();
     }
 
     function _assertTestState(TestState memory state, uint256 tolerance) internal view {
         assertApproxEqAbs(rateLimits.getCurrentRateLimit(takeKey), state.rateLimit,        tolerance, "rateLimit");
-        assertApproxEqAbs(USDC.balanceOf(address(almProxy)),       state.usdcAlm,          tolerance, "usdcAlm");
-        assertApproxEqAbs(USDC.balanceOf(address(sparkVault)),     state.usdcVault,        tolerance, "usdcVault");
-        assertApproxEqAbs(sparkVault.totalAssets(),                state.vaultTotalAssets, tolerance, "vaultTotalAssets");
-        assertApproxEqAbs(sparkVault.totalSupply(),                state.vaultTotalSupply, tolerance, "vaultTotalSupply");
+        assertApproxEqAbs(USDC.balanceOf(almProxy),                state.usdcAlm,          tolerance, "usdcAlm");
+        assertApproxEqAbs(USDC.balanceOf(sparkVault),              state.usdcVault,        tolerance, "usdcVault");
+        assertApproxEqAbs(SparkVault(sparkVault).totalAssets(),    state.vaultTotalAssets, tolerance, "vaultTotalAssets");
+        assertApproxEqAbs(SparkVault(sparkVault).totalSupply(),    state.vaultTotalSupply, tolerance, "vaultTotalSupply");
     }
 
     function _assertTestState(TestState memory state) internal view {
@@ -79,16 +79,16 @@ contract MainnetController_SparkVault_TakeFrom_Tests is SparkVault_TestBase {
     function test_takeFromSparkVault_reentrancy() external {
         _setControllerEntered();
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        mainnetController.takeFromSparkVault(address(sparkVault), 1e18);
+        mainnetController.takeFromSparkVault(sparkVault, 1e18);
     }
 
     function test_takeFromSparkVault_notRelayer() external {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            RELAYER_ROLE
         ));
-        mainnetController.takeFromSparkVault(address(sparkVault), 1e18);
+        mainnetController.takeFromSparkVault(sparkVault, 1e18);
     }
 
     function test_takeFromSparkVault_zeroMaxAmount() external {
@@ -96,51 +96,51 @@ contract MainnetController_SparkVault_TakeFrom_Tests is SparkVault_TestBase {
         rateLimits.setRateLimitData(takeKey, 0, 0);
 
         vm.expectRevert("RateLimits/zero-maxAmount");
-        vm.prank(relayer);
-        mainnetController.takeFromSparkVault(address(sparkVault), 1e18);
+        vm.prank(RELAYER);
+        mainnetController.takeFromSparkVault(sparkVault, 1e18);
     }
 
     function test_takeFromSparkVault_rateLimitBoundary() external {
         deal(Ethereum.USDC, user, 10_000_000e6);
 
         vm.startPrank(user);
-        USDC.approve(address(sparkVault), 10_000_000e6);
-        sparkVault.deposit(10_000_000e6, user);
+        USDC.approve(sparkVault, 10_000_000e6);
+        SparkVault(sparkVault).deposit(10_000_000e6, user);
         vm.stopPrank();
 
         vm.prank(Ethereum.SPARK_PROXY);
         rateLimits.setRateLimitData(takeKey, 10_000_000e6, uint256(10_000_000e6) / 1 days);
 
         vm.expectRevert("RateLimits/rate-limit-exceeded");
-        vm.prank(relayer);
-        mainnetController.takeFromSparkVault(address(sparkVault), 10_000_000e6 + 1);
+        vm.prank(RELAYER);
+        mainnetController.takeFromSparkVault(sparkVault, 10_000_000e6 + 1);
 
-        vm.prank(relayer);
-        mainnetController.takeFromSparkVault(address(sparkVault), 10_000_000e6);
+        vm.prank(RELAYER);
+        mainnetController.takeFromSparkVault(sparkVault, 10_000_000e6);
     }
 
     function test_takeFromSparkVault_rateLimited() external {
         deal(Ethereum.USDC, user, 10_000_000e6);
 
         vm.startPrank(user);
-        USDC.approve(address(sparkVault), 10_000_000e6);
-        sparkVault.deposit(10_000_000e6, user);
+        USDC.approve(sparkVault, 10_000_000e6);
+        SparkVault(sparkVault).deposit(10_000_000e6, user);
         vm.stopPrank();
 
         TestState memory testState = TestState({
-            rateLimit:        1_000_000e6,
-            usdcAlm:          0,
-            usdcVault:        10_000_000e6,
-            vaultTotalAssets: 10_000_000e6,
-            vaultTotalSupply: 10_000_000e6
+            rateLimit        : 1_000_000e6,
+            usdcAlm          : 0,
+            usdcVault        : 10_000_000e6,
+            vaultTotalAssets : 10_000_000e6,
+            vaultTotalSupply : 10_000_000e6
         });
 
         _assertTestState(testState);
 
         vm.record();
 
-        vm.prank(relayer);
-        mainnetController.takeFromSparkVault(address(sparkVault), 1_000_000e6);
+        vm.prank(RELAYER);
+        mainnetController.takeFromSparkVault(sparkVault, 1_000_000e6);
 
         _assertReentrancyGuardWrittenToTwice();
 
@@ -160,8 +160,8 @@ contract MainnetController_SparkVault_TakeFrom_Tests is SparkVault_TestBase {
 
         _assertTestState(testState);
 
-        vm.prank(relayer);
-        mainnetController.takeFromSparkVault(address(sparkVault), rateLimitIncreaseInOneHour);
+        vm.prank(RELAYER);
+        mainnetController.takeFromSparkVault(sparkVault, rateLimitIncreaseInOneHour);
 
         testState.rateLimit -= rateLimitIncreaseInOneHour;  // Rate limit goes down
         testState.usdcAlm   += rateLimitIncreaseInOneHour;  // The almProxy receives the taken amount
@@ -170,8 +170,8 @@ contract MainnetController_SparkVault_TakeFrom_Tests is SparkVault_TestBase {
         _assertTestState(testState);
 
         vm.expectRevert("RateLimits/rate-limit-exceeded");
-        vm.prank(relayer);
-        mainnetController.takeFromSparkVault(address(sparkVault), 1);
+        vm.prank(RELAYER);
+        mainnetController.takeFromSparkVault(sparkVault, 1);
     }
 
     function testFuzz_takeFromSparkVault(uint256 depositAmount, uint256 takeAmount) external {
@@ -184,22 +184,22 @@ contract MainnetController_SparkVault_TakeFrom_Tests is SparkVault_TestBase {
         deal(Ethereum.USDC, user, depositAmount);
 
         vm.startPrank(user);
-        USDC.approve(address(sparkVault), depositAmount);
-        sparkVault.deposit(depositAmount, user);
+        USDC.approve(sparkVault, depositAmount);
+        SparkVault(sparkVault).deposit(depositAmount, user);
         vm.stopPrank();
 
         TestState memory testState = TestState({
-            rateLimit:        10_000_000_000e18,
-            usdcAlm:          0,
-            usdcVault:        depositAmount,
-            vaultTotalAssets: depositAmount,
-            vaultTotalSupply: depositAmount
+            rateLimit        : 10_000_000_000e18,
+            usdcAlm          : 0,
+            usdcVault        : depositAmount,
+            vaultTotalAssets : depositAmount,
+            vaultTotalSupply : depositAmount
         });
 
         _assertTestState(testState);
 
-        vm.prank(relayer);
-        mainnetController.takeFromSparkVault(address(sparkVault), takeAmount);
+        vm.prank(RELAYER);
+        mainnetController.takeFromSparkVault(sparkVault, takeAmount);
 
         testState.rateLimit -= takeAmount;  // Rate limit goes down
         testState.usdcAlm   += takeAmount;  // The almProxy receives the taken amount
@@ -210,7 +210,7 @@ contract MainnetController_SparkVault_TakeFrom_Tests is SparkVault_TestBase {
 
 }
 
-contract MainnetController_SparkVault_TakeFrom_E2ETests is SparkVault_TestBase {
+contract MainnetController_SparkVault_TakeFrom_E2ETests is PSM_TestBase {
 
     struct E2ETestState {
         uint256 takeRateLimit;
@@ -223,29 +223,45 @@ contract MainnetController_SparkVault_TakeFrom_E2ETests is SparkVault_TestBase {
         uint256 vaultTotalSupply;
     }
 
-    bytes32 internal constant LIMIT_4626_DEPOSIT   = keccak256("LIMIT_4626_DEPOSIT");
-    bytes32 internal constant LIMIT_4626_WITHDRAW  = keccak256("LIMIT_4626_WITHDRAW");
-    bytes32 internal constant LIMIT_ASSET_TRANSFER = keccak256("LIMIT_ASSET_TRANSFER");
-    bytes32 internal constant LIMIT_USDS_TO_USDC   = keccak256("LIMIT_USDS_TO_USDC");
+    bytes32 internal constant LIMIT_4626_DEPOSIT     = keccak256("LIMIT_4626_DEPOSIT");
+    bytes32 internal constant LIMIT_4626_WITHDRAW    = keccak256("LIMIT_4626_WITHDRAW");
+    bytes32 internal constant LIMIT_ASSET_TRANSFER   = keccak256("LIMIT_ASSET_TRANSFER");
+    bytes32 internal constant LIMIT_SPARK_VAULT_TAKE = keccak256("LIMIT_SPARK_VAULT_TAKE");
+    bytes32 internal constant LIMIT_USDS_TO_USDC     = keccak256("LIMIT_USDS_TO_USDC");
 
+    bytes32 internal takeKey;
     bytes32 internal transferKey;
 
+    address internal user = makeAddr("user");
+
+    address internal sparkVault;
+
     function setUp() public override {
+        super.setUp();
+
         // Step 1: Deploy the spark vault
 
-        super.setUp();
+        sparkVault = address(new ERC1967Proxy(
+            address(new SparkVault()),
+            abi.encodeCall(
+                SparkVault.initialize,
+                (Ethereum.USDC, "Spark Savings USDC V2", "spUSDC", Ethereum.SPARK_PROXY)
+            )
+        ));
 
         // Step 2 (spell): Grant roles to the almProxy and setter, set VSR bounds
 
         vm.startPrank(Ethereum.SPARK_PROXY);
 
-        sparkVault.grantRole(sparkVault.SETTER_ROLE(), relayer);
+        SparkVault(sparkVault).grantRole(SparkVault(sparkVault).TAKER_ROLE(),  almProxy);
+        SparkVault(sparkVault).grantRole(SparkVault(sparkVault).SETTER_ROLE(), RELAYER);
 
-        sparkVault.setVsrBounds(1e27, 1.000000003022265980097387650e27);  // 0% to 10% APY
+        SparkVault(sparkVault).setVsrBounds(1e27, 1.000000003022265980097387650e27);  // 0% to 10% APY
 
         // Step 3 (spell): Set the rate limits
 
-        transferKey = makeAddressAddressKey(LIMIT_ASSET_TRANSFER, Ethereum.USDC, address(sparkVault));
+        takeKey     = makeAddressKey(LIMIT_SPARK_VAULT_TAKE, sparkVault);
+        transferKey = makeAddressAddressKey(LIMIT_ASSET_TRANSFER, Ethereum.USDC, sparkVault);
 
         bytes32 morphoDepositKey  = makeAddressKey(LIMIT_4626_DEPOSIT,  Ethereum.MORPHO_VAULT_DAI_1);
         bytes32 morphoWithdrawKey = makeAddressKey(LIMIT_4626_WITHDRAW, Ethereum.MORPHO_VAULT_DAI_1);
@@ -272,12 +288,12 @@ contract MainnetController_SparkVault_TakeFrom_E2ETests is SparkVault_TestBase {
         assertApproxEqAbs(rateLimits.getCurrentRateLimit(takeKey),     state.takeRateLimit,     tolerance, "takeRateLimit");
         assertApproxEqAbs(rateLimits.getCurrentRateLimit(transferKey), state.transferRateLimit, tolerance, "transferRateLimit");
 
-        assertApproxEqAbs(dai.balanceOf(address(almProxy)),    state.daiAlm,           tolerance, "daiAlm");
-        assertApproxEqAbs(USDC.balanceOf(address(almProxy)),   state.usdcAlm,          tolerance, "usdcAlm");
-        assertApproxEqAbs(USDC.balanceOf(address(sparkVault)), state.usdcVault,        tolerance, "usdcVault");
-        assertApproxEqAbs(sparkVault.totalAssets(),            state.vaultTotalAssets, tolerance, "vaultTotalAssets");
-        assertApproxEqAbs(sparkVault.totalSupply(),            state.vaultTotalSupply, tolerance, "vaultTotalSupply");
-        assertApproxEqAbs(sparkVault.assetsOutstanding(),      state.vaultAssetsOut,   tolerance, "vaultAssetsOut");
+        assertApproxEqAbs(DAI.balanceOf(almProxy),                    state.daiAlm,           tolerance, "daiAlm");
+        assertApproxEqAbs(USDC.balanceOf(almProxy),                   state.usdcAlm,          tolerance, "usdcAlm");
+        assertApproxEqAbs(USDC.balanceOf(sparkVault),                 state.usdcVault,        tolerance, "usdcVault");
+        assertApproxEqAbs(SparkVault(sparkVault).totalAssets(),       state.vaultTotalAssets, tolerance, "vaultTotalAssets");
+        assertApproxEqAbs(SparkVault(sparkVault).totalSupply(),       state.vaultTotalSupply, tolerance, "vaultTotalSupply");
+        assertApproxEqAbs(SparkVault(sparkVault).assetsOutstanding(), state.vaultAssetsOut,   tolerance, "vaultAssetsOut");
     }
 
     function _assertE2EState(E2ETestState memory state) internal view {
@@ -288,14 +304,14 @@ contract MainnetController_SparkVault_TakeFrom_E2ETests is SparkVault_TestBase {
         // Step 1: Set the initial state
 
         E2ETestState memory testState = E2ETestState({
-            takeRateLimit:     10_000_000e6,
-            transferRateLimit: 10_000_000e6,
-            daiAlm:            0,
-            usdcAlm:           0,
-            usdcVault:         0,
-            vaultAssetsOut:    0,
-            vaultTotalAssets:  0,
-            vaultTotalSupply:  0
+            takeRateLimit     : 10_000_000e6,
+            transferRateLimit : 10_000_000e6,
+            daiAlm            : 0,
+            usdcAlm           : 0,
+            usdcVault         : 0,
+            vaultAssetsOut    : 0,
+            vaultTotalAssets  : 0,
+            vaultTotalSupply  : 0
         });
 
         _assertE2EState(testState);
@@ -307,8 +323,8 @@ contract MainnetController_SparkVault_TakeFrom_E2ETests is SparkVault_TestBase {
         deal(Ethereum.USDC, user, 10_000_000e6);
 
         vm.startPrank(user);
-        USDC.approve(address(sparkVault), 10_000_000e6);
-        sparkVault.deposit(10_000_000e6, user);
+        USDC.approve(sparkVault, 10_000_000e6);
+        SparkVault(sparkVault).deposit(10_000_000e6, user);
         vm.stopPrank();
 
         testState.usdcVault        = 10_000_000e6;
@@ -321,8 +337,8 @@ contract MainnetController_SparkVault_TakeFrom_E2ETests is SparkVault_TestBase {
 
         // Step 3: Take usdc from the spark vault
 
-        vm.prank(relayer);
-        mainnetController.takeFromSparkVault(address(sparkVault), 9_000_000e6);
+        vm.prank(RELAYER);
+        mainnetController.takeFromSparkVault(sparkVault, 9_000_000e6);
 
         testState.takeRateLimit  = 1_000_000e6;
         testState.usdcAlm        = 9_000_000e6;
@@ -335,11 +351,11 @@ contract MainnetController_SparkVault_TakeFrom_E2ETests is SparkVault_TestBase {
 
         // Step 4: Swap into DAI, deposit into Morpho, and set the VSR to 4% APY
 
-        vm.startPrank(relayer);
+        vm.startPrank(RELAYER);
         mainnetController.swapUSDCToUSDS(9_000_000e6);
         mainnetController.swapUSDSToDAI(9_000_000e18);
         uint256 shares = mainnetController.depositERC4626(Ethereum.MORPHO_VAULT_DAI_1, 9_000_000e18, 0);
-        sparkVault.setVsr(1.000000001243680656318820312e27);  // 4% APY
+        SparkVault(sparkVault).setVsr(1.000000001243680656318820312e27);  // 4% APY
         vm.stopPrank();
 
         testState.takeRateLimit = 10_000_000e6;
@@ -360,11 +376,11 @@ contract MainnetController_SparkVault_TakeFrom_E2ETests is SparkVault_TestBase {
 
         // Step 6: Redeem assets from Morpho, swap DAI to USDC and transfer outstanding assets to the vault
 
-        vm.startPrank(relayer);
+        vm.startPrank(RELAYER);
         uint256 assets = mainnetController.redeemERC4626(Ethereum.MORPHO_VAULT_DAI_1, shares, 0);
         mainnetController.swapDAIToUSDS(9_400_000e18);
         mainnetController.swapUSDSToUSDC(9_400_000e6);
-        mainnetController.transferAsset(Ethereum.USDC, address(sparkVault), 9_400_000e6);
+        mainnetController.transferAsset(Ethereum.USDC, sparkVault, 9_400_000e6);
         vm.stopPrank();
 
         assertEq(assets, 9_414_173.844477081922732043e18);  // ~414k in yield
@@ -382,19 +398,19 @@ contract MainnetController_SparkVault_TakeFrom_E2ETests is SparkVault_TestBase {
         // Step 7: User withdraws all assets
 
         vm.startPrank(user);
-        sparkVault.withdraw(sparkVault.assetsOf(user), user, user);
+        SparkVault(sparkVault).withdraw(SparkVault(sparkVault).assetsOf(user), user, user);
         vm.stopPrank();
 
         // Vault is empty and ALM system has some profit
         _assertE2EState(E2ETestState({
-            takeRateLimit:     10_000_000e6,
-            transferRateLimit: 600_000e6,
-            daiAlm:            14_173.844477081922732043e18,  // Profit
-            usdcAlm:           0,
-            usdcVault:         1,  // Rounding against user
-            vaultAssetsOut:    0,
-            vaultTotalAssets:  0,
-            vaultTotalSupply:  0
+            takeRateLimit     : 10_000_000e6,
+            transferRateLimit : 600_000e6,
+            daiAlm            : 14_173.844477081922732043e18,  // Profit
+            usdcAlm           : 0,
+            usdcVault         : 1,  // Rounding against user
+            vaultAssetsOut    : 0,
+            vaultTotalAssets  : 0,
+            vaultTotalSupply  : 0
         }));
 
         // User has all funds, and has earned a 4% APY on their deposit

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.21;
 
+// TODO: Delete this file
+
 import { ALMProxy }          from "../src/ALMProxy.sol";
 import { ForeignController } from "../src/ForeignController.sol";
 import { MainnetController } from "../src/MainnetController.sol";
@@ -10,98 +12,34 @@ import { ControllerInstance } from "./ControllerInstance.sol";
 
 library ForeignControllerDeploy {
 
-    function deployController(
-        address admin,
-        address almProxy,
-        address rateLimits,
-        address psm,
-        address usdc,
-        address cctp
-    )
+    function deployController(address admin, address almProxy, address rateLimits)
         internal
         returns (address controller)
     {
-        controller = address(new ForeignController({
-            admin_      : admin,
-            proxy_      : almProxy,
-            rateLimits_ : rateLimits,
-            psm_        : psm,
-            usdc_       : usdc,
-            cctp_       : cctp
-        }));
+        controller = address(new ForeignController(admin, almProxy, rateLimits));
     }
 
-    function deployFull(
-        address admin,
-        address psm,
-        address usdc,
-        address cctp
-    )
-        internal
-        returns (ControllerInstance memory instance)
-    {
+    function deployFull(address admin) internal returns (ControllerInstance memory instance) {
         instance.almProxy   = address(new ALMProxy(admin));
         instance.rateLimits = address(new RateLimits(admin));
-
-        instance.controller = address(new ForeignController({
-            admin_      : admin,
-            proxy_      : instance.almProxy,
-            rateLimits_ : instance.rateLimits,
-            psm_        : psm,
-            usdc_       : usdc,
-            cctp_       : cctp
-        }));
+        instance.controller = address(new ForeignController(admin, instance.almProxy, instance.rateLimits));
     }
 
 }
 
 library MainnetControllerDeploy {
 
-    function deployController(
-        address admin,
-        address almProxy,
-        address rateLimits,
-        address vault,
-        address psm,
-        address daiUsds,
-        address cctp
-    )
+    function deployController(address admin, address almProxy, address rateLimits)
         internal
         returns (address controller)
     {
-        controller = address(new MainnetController({
-            admin_      : admin,
-            proxy_      : almProxy,
-            rateLimits_ : rateLimits,
-            vault_      : vault,
-            psm_        : psm,
-            daiUsds_    : daiUsds,
-            cctp_       : cctp
-        }));
+        return address(new MainnetController(admin, almProxy, rateLimits));
     }
 
-    function deployFull(
-        address admin,
-        address vault,
-        address psm,
-        address daiUsds,
-        address cctp
-    )
-        internal
-        returns (ControllerInstance memory instance)
-    {
+    function deployFull(address admin) internal returns (ControllerInstance memory instance) {
         instance.almProxy   = address(new ALMProxy(admin));
         instance.rateLimits = address(new RateLimits(admin));
-
-        instance.controller = address(new MainnetController({
-            admin_      : admin,
-            proxy_      : instance.almProxy,
-            rateLimits_ : instance.rateLimits,
-            vault_      : vault,
-            psm_        : psm,
-            daiUsds_    : daiUsds,
-            cctp_       : cctp
-        }));
+        instance.controller = address(new MainnetController(admin, instance.almProxy, instance.rateLimits));
     }
 
 }

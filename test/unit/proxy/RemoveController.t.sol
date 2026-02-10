@@ -9,24 +9,14 @@ import { UnitTestBase } from "../UnitTestBase.t.sol";
 
 abstract contract Freezable_RemoveController_TestBase is UnitTestBase {
 
-    event ExampleEvent(
-        address indexed exampleAddress,
-        uint256 exampleValue,
-        uint256 exampleReturn,
-        address caller,
-        uint256 value
-    );
+    ALMProxyFreezable internal almProxyFreezable;
 
-    event ControllerRemoved(address indexed relayer);
+    address internal target;
 
-    ALMProxyFreezable almProxyFreezable;
+    address internal controller     = makeAddr("controller");
+    address internal exampleAddress = makeAddr("exampleAddress");
 
-    address target;
-
-    address controller     = makeAddr("controller");
-    address exampleAddress = makeAddr("exampleAddress");
-
-    bytes data = abi.encodeWithSignature(
+    bytes internal data = abi.encodeWithSignature(
         "exampleCall(address,uint256)",
         exampleAddress,
         42
@@ -45,9 +35,9 @@ abstract contract Freezable_RemoveController_TestBase is UnitTestBase {
 
 }
 
-contract ALMProxy_Freezable_RemoveController_FailureTests is Freezable_RemoveController_TestBase {
+contract ALMProxy_Freezable_RemoveController_Tests is Freezable_RemoveController_TestBase {
 
-    function test_removeController_unauthorizedAccount() public {
+    function test_removeController_unauthorizedAccount() external {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
@@ -55,23 +45,20 @@ contract ALMProxy_Freezable_RemoveController_FailureTests is Freezable_RemoveCon
         ));
         almProxyFreezable.removeController(controller);
 
-        vm.prank(admin);
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             admin,
             FREEZER
         ));
+        vm.prank(admin);
         almProxyFreezable.removeController(controller);
     }
 
-}
-
-contract ALMProxy_Freezable_RemoveController_SuccessTests is Freezable_RemoveController_TestBase {
-
-    function test_removeController() public {
+    function test_removeController() external {
         // ALM Proxy Freezable is msg.sender, target emits the event
         vm.expectEmit(target);
-        emit ExampleEvent(exampleAddress, 42, 84, address(almProxyFreezable), 0);
+        emit MockTarget.ExampleEvent(exampleAddress, 42, 84, address(almProxyFreezable), 0);
+
         vm.prank(controller);
         bytes memory returnData = almProxyFreezable.doCall(target, data);
 
@@ -81,21 +68,22 @@ contract ALMProxy_Freezable_RemoveController_SuccessTests is Freezable_RemoveCon
         assertTrue(almProxyFreezable.hasRole(CONTROLLER, controller));
 
         // Freezer comes in and removes controller.
-        vm.prank(freezer);
         vm.expectEmit(address(almProxyFreezable));
-        emit ControllerRemoved(controller);
+        emit ALMProxyFreezable.ControllerRemoved(controller);
+
+        vm.prank(freezer);
         almProxyFreezable.removeController(controller);
 
         // After no longer has controller role
         assertFalse(almProxyFreezable.hasRole(CONTROLLER, controller));
 
         // After can no longer call as controller
-        vm.prank(controller);
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             controller,
             CONTROLLER
         ));
+        vm.prank(controller);
         almProxyFreezable.doCall(target, data);
     }
 

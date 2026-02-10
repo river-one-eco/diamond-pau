@@ -11,9 +11,17 @@ import { IMetaMorphoLike, IMorphoLike, Id, Market, MarketParams } from "../inter
 
 import { ForkTestBase } from "./ForkTestBase.t.sol";
 
+interface IERC20Like {
+
+    function approve(address spender, uint256 amount) external returns (bool);
+
+}
+
 abstract contract ERC4626DonationAttack_TestBase is ForkTestBase {
 
-    IMetaMorphoLike internal constant MORPHO_VAULT = IMetaMorphoLike(0xe41a0583334f0dc4E023Acd0bFef3667F6FE0597);
+    IMetaMorphoLike internal constant MORPHO_VAULT = IMetaMorphoLike(Ethereum.MORPHO_VAULT_USDS);
+
+    IERC20Like internal constant USDS = IERC20Like(Ethereum.USDS);
 
     address internal morpho;
 
@@ -40,8 +48,8 @@ abstract contract ERC4626DonationAttack_TestBase is ForkTestBase {
 
         morpho = MORPHO_VAULT.MORPHO();
 
-        bytes32 depositKey  = makeAddressKey(mainnetController.LIMIT_4626_DEPOSIT(),  address(MORPHO_VAULT));
-        bytes32 withdrawKey = makeAddressKey(mainnetController.LIMIT_4626_WITHDRAW(), address(MORPHO_VAULT));
+        bytes32 depositKey  = makeAddressKey(mainnetController.LIMIT_4626_DEPOSIT(),  Ethereum.MORPHO_VAULT_USDS);
+        bytes32 withdrawKey = makeAddressKey(mainnetController.LIMIT_4626_WITHDRAW(), Ethereum.MORPHO_VAULT_USDS);
 
         // Basic validation
         assertEq(keccak256(abi.encode(MORPHO_VAULT.symbol())), keccak256(abi.encode("sparkUSDS")));
@@ -89,27 +97,26 @@ abstract contract ERC4626DonationAttack_TestBase is ForkTestBase {
 contract MainnetController_ERC4626_DonationAttack_Tests is ERC4626DonationAttack_TestBase {
 
     function test_depositERC4626_donationAttackFailure() external {
-        vm.startPrank(Ethereum.SPARK_PROXY);
-        mainnetController.setMaxExchangeRate(address(MORPHO_VAULT), 1e18, 10e18);
-        vm.stopPrank();
+        vm.prank(Ethereum.SPARK_PROXY);
+        mainnetController.setMaxExchangeRate(Ethereum.MORPHO_VAULT_USDS, 1e18, 10e18);
 
         _doAttack();
 
-        vm.prank(relayer);
         vm.expectRevert("ERC4626Lib/exchange-rate-too-high");
-        mainnetController.depositERC4626(address(MORPHO_VAULT), 2_000_000e18, 0);
+        vm.prank(RELAYER);
+        mainnetController.depositERC4626(Ethereum.MORPHO_VAULT_USDS, 2_000_000e18, 0);
     }
 
     function test_depositERC4626_donationAttackSuccess() external {
         // Set max exchange rate too high
         vm.startPrank(Ethereum.SPARK_PROXY);
-        mainnetController.setMaxExchangeRate(address(MORPHO_VAULT), 1, MORPHO_VAULT.convertToAssets(1e24));
+        mainnetController.setMaxExchangeRate(Ethereum.MORPHO_VAULT_USDS, 1, MORPHO_VAULT.convertToAssets(1e24));
         vm.stopPrank();
 
         _doAttack();
 
-        vm.prank(relayer);
-        uint256 shares = mainnetController.depositERC4626(address(MORPHO_VAULT), 2_000_000e18, 0);
+        vm.prank(RELAYER);
+        uint256 shares = mainnetController.depositERC4626(Ethereum.MORPHO_VAULT_USDS, 2_000_000e18, 0);
 
         // One can compute:
         // shares == assets * (totalSupply + 1) / (totalAssets + 1)
@@ -120,7 +127,7 @@ contract MainnetController_ERC4626_DonationAttack_Tests is ERC4626DonationAttack
         assertEq(MORPHO_VAULT.totalAssets(), 3_000_000e18 + 1);
         assertEq(MORPHO_VAULT.totalSupply(), 4);
 
-        uint256 assetsOfProxy    = MORPHO_VAULT.convertToAssets(MORPHO_VAULT.balanceOf(address(almProxy)));
+        uint256 assetsOfProxy    = MORPHO_VAULT.convertToAssets(MORPHO_VAULT.balanceOf(almProxy));
         uint256 assetsOfAttacker = MORPHO_VAULT.convertToAssets(MORPHO_VAULT.balanceOf(attacker));
 
         // convertToAssets(shares) == shares * (totalAssets + 1) / (totalSupply + 1)
@@ -139,17 +146,17 @@ contract MainnetController_ERC4626_DonationAttack_Tests is ERC4626DonationAttack
         assertEq(market.totalSupplyAssets, 36_095_481.319542091092211965e18); // ~36M USDS
         assertEq(market.totalSupplyShares, 36_095_481.319542091092211965000000e24);
 
-        deal(address(usds), attacker, 1_000_000e18 + 1);
+        deal(Ethereum.USDS, attacker, 1_000_000e18 + 1);
 
         vm.startPrank(attacker);
 
-        usds.approve(address(MORPHO_VAULT), 1);
+        USDS.approve(Ethereum.MORPHO_VAULT_USDS, 1);
         MORPHO_VAULT.deposit(1, attacker);
-        usds.approve(morpho, 1_000_000e18);
+        USDS.approve(morpho, 1_000_000e18);
 
         // Donation attack performed by donating shares of Morpho market supply to Morpho vault
         ( uint256 assets, uint256 shares ) = IMorphoLike(morpho).supply(
-            marketParams, 1_000_000e18, 0, address(MORPHO_VAULT), hex""
+            marketParams, 1_000_000e18, 0, Ethereum.MORPHO_VAULT_USDS, hex""
         );
 
         vm.stopPrank();
@@ -168,7 +175,7 @@ contract MainnetController_ERC4626_DonationAttack_Tests is ERC4626DonationAttack
         // == (1_000_000e18 + 2) / 2 == 500_000e18 + 1.
         assertEq(MORPHO_VAULT.convertToAssets(1), 500_000e18 + 1);
 
-        deal(address(usds), address(almProxy), 2_000_000e18);
+        deal(Ethereum.USDS, almProxy, 2_000_000e18);
     }
 
 }

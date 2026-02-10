@@ -19,7 +19,7 @@ interface IERC20Like {
 
 abstract contract TransferAsset_TestBase is ForkTestBase {
 
-    IERC20Like internal constant USDC_BASE = IERC20Like(Base.USDC);
+    IERC20Like internal constant USDC = IERC20Like(Base.USDC);
 
     address internal receiver = makeAddr("receiver");
 
@@ -55,25 +55,25 @@ contract ForeignController_TransferAsset_Tests is TransferAsset_TestBase {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            RELAYER_ROLE
         ));
         foreignController.transferAsset(Base.USDC, receiver, 1_000_000e6);
     }
 
     function test_transferAsset_zeroMaxAmount() external {
         vm.expectRevert("RateLimits/zero-maxAmount");
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         foreignController.transferAsset(makeAddr("fake-token"), receiver, 1e18);
     }
 
     function test_transferAsset_rateLimitedBoundary() external {
-        deal(Base.USDC, address(almProxy), 1_000_000e6 + 1);
+        deal(Base.USDC, almProxy, 1_000_000e6 + 1);
 
         vm.expectRevert("RateLimits/rate-limit-exceeded");
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         foreignController.transferAsset(Base.USDC, receiver, 1_000_000e6 + 1);
 
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         foreignController.transferAsset(Base.USDC, receiver, 1_000_000e6);
     }
 
@@ -94,28 +94,28 @@ contract ForeignController_TransferAsset_Tests is TransferAsset_TestBase {
 
         vm.stopPrank();
 
-        deal(address(token), address(almProxy), 1_000_000e18);
+        deal(address(token), almProxy, 1_000_000e18);
 
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         vm.expectRevert("TransferAssetLib/transfer-failed");
         foreignController.transferAsset(address(token), receiver, 1_000_000e18);
     }
 
     function test_transferAsset() external {
-        deal(Base.USDC, address(almProxy), 1_000_000e6);
+        deal(Base.USDC, almProxy, 1_000_000e6);
 
-        assertEq(USDC_BASE.balanceOf(receiver),          0);
-        assertEq(USDC_BASE.balanceOf(address(almProxy)), 1_000_000e6);
+        assertEq(USDC.balanceOf(receiver), 0);
+        assertEq(USDC.balanceOf(almProxy), 1_000_000e6);
 
         vm.record();
 
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         foreignController.transferAsset(Base.USDC, receiver, 1_000_000e6);
 
         _assertReentrancyGuardWrittenToTwice();
 
-        assertEq(USDC_BASE.balanceOf(receiver),          1_000_000e6);
-        assertEq(USDC_BASE.balanceOf(address(almProxy)), 0);
+        assertEq(USDC.balanceOf(receiver), 1_000_000e6);
+        assertEq(USDC.balanceOf(almProxy), 0);
     }
 
     function test_transferAsset_successNoReturnData() external {
@@ -135,16 +135,16 @@ contract ForeignController_TransferAsset_Tests is TransferAsset_TestBase {
 
         vm.stopPrank();
 
-        deal(address(token), address(almProxy), 1_000_000e6);
+        deal(address(token), almProxy, 1_000_000e6);
 
-        assertEq(token.balanceOf(receiver),          0);
-        assertEq(token.balanceOf(address(almProxy)), 1_000_000e6);
+        assertEq(token.balanceOf(receiver), 0);
+        assertEq(token.balanceOf(almProxy), 1_000_000e6);
 
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         foreignController.transferAsset(address(token), receiver, 1_000_000e6);
 
-        assertEq(token.balanceOf(receiver),          1_000_000e6);
-        assertEq(token.balanceOf(address(almProxy)), 0);
+        assertEq(token.balanceOf(receiver), 1_000_000e6);
+        assertEq(token.balanceOf(almProxy), 0);
     }
 
 }

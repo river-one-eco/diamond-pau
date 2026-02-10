@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.21;
 
+import { Ethereum } from "../../lib/spark-address-registry/src/Ethereum.sol";
+
 import { IALMProxy }   from "../interfaces/IALMProxy.sol";
 import { IRateLimits } from "../interfaces/IRateLimits.sol";
 
 import { ApproveLib } from "./ApproveLib.sol";
-
 
 interface IEthenaMinterLike {
 
@@ -27,17 +28,19 @@ interface ISUSDELike {
 
 library USDELib {
 
+    /**********************************************************************************************/
+    /*** Constants                                                                              ***/
+    /**********************************************************************************************/
+
     bytes32 public constant LIMIT_USDE_BURN      = keccak256("LIMIT_USDE_BURN");
     bytes32 public constant LIMIT_USDE_MINT      = keccak256("LIMIT_USDE_MINT");
     bytes32 public constant LIMIT_SUSDE_COOLDOWN = keccak256("LIMIT_SUSDE_COOLDOWN");
 
     /**********************************************************************************************/
-    /*** External functions                                                                     ***/
+    /*** External interactive functions                                                         ***/
     /**********************************************************************************************/
 
-    function setDelegatedSigner(address proxy, address minter, address delegatedSigner)
-        external
-    {
+    function setDelegatedSigner(address proxy, address minter, address delegatedSigner) external {
         IALMProxy(proxy).doCall(
             minter,
             abi.encodeCall(IEthenaMinterLike.setDelegatedSigner, (delegatedSigner))
@@ -56,7 +59,6 @@ library USDELib {
     function prepareMint(
         address proxy,
         address rateLimits,
-        address usdc,
         address minter,
         uint256 usdcAmount
     )
@@ -64,13 +66,12 @@ library USDELib {
     {
         IRateLimits(rateLimits).triggerRateLimitDecrease(LIMIT_USDE_MINT, usdcAmount);
 
-        ApproveLib.approve(usdc, proxy, minter, usdcAmount);
+        ApproveLib.approve(Ethereum.USDC, proxy, minter, usdcAmount);
     }
 
     function prepareBurn(
         address proxy,
         address rateLimits,
-        address usde,
         address minter,
         uint256 usdeAmount
     )
@@ -78,10 +79,10 @@ library USDELib {
     {
         IRateLimits(rateLimits).triggerRateLimitDecrease(LIMIT_USDE_BURN, usdeAmount);
 
-        ApproveLib.approve(usde, proxy, minter, usdeAmount);
+        ApproveLib.approve(Ethereum.USDE, proxy, minter, usdeAmount);
     }
 
-    function cooldownAssets(address proxy, address rateLimits, address susde, uint256 usdeAmount)
+    function cooldownAssets(address proxy, address rateLimits, uint256 usdeAmount)
         external
         returns (uint256 shares)
     {
@@ -89,21 +90,21 @@ library USDELib {
 
         return abi.decode(
             IALMProxy(proxy).doCall(
-                susde,
+                Ethereum.SUSDE,
                 abi.encodeCall(ISUSDELike.cooldownAssets, (usdeAmount))
             ),
             (uint256)
         );
     }
 
-    function cooldownShares(address proxy, address rateLimits, address susde, uint256 susdeAmount)
+    function cooldownShares(address proxy, address rateLimits, uint256 susdeAmount)
         external
         returns (uint256 assets)
     {
         // NOTE: Rate limited at end of function, so cannot return here.
         assets = abi.decode(
             IALMProxy(proxy).doCall(
-                susde,
+                Ethereum.SUSDE,
                 abi.encodeCall(ISUSDELike.cooldownShares, (susdeAmount))
             ),
             (uint256)
@@ -112,8 +113,8 @@ library USDELib {
         IRateLimits(rateLimits).triggerRateLimitDecrease(LIMIT_SUSDE_COOLDOWN, assets);
     }
 
-    function unstakeSUSDE(address proxy, address susde) external {
-        IALMProxy(proxy).doCall(susde, abi.encodeCall(ISUSDELike.unstake, (proxy)));
+    function unstakeSUSDE(address proxy) external {
+        IALMProxy(proxy).doCall(Ethereum.SUSDE, abi.encodeCall(ISUSDELike.unstake, (proxy)));
     }
 
 }

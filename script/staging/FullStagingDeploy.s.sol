@@ -39,12 +39,12 @@ import { MainnetControllerInit } from "../../deploy/MainnetControllerInit.sol";
 
 import { IRateLimits } from "../../src/interfaces/IRateLimits.sol";
 
-import { ForeignController } from "../../src/ForeignController.sol";
-import { MainnetController } from "../../src/MainnetController.sol";
-import { RateLimitHelpers }  from "../../src/RateLimitHelpers.sol";
+import { ForeignController }             from "../../src/ForeignController.sol";
+import { MainnetController }             from "../../src/MainnetController.sol";
+import { makeAddressKey, makeUint32Key } from "../../src/RateLimitHelpers.sol";
 
 import { MockJug }      from "./mocks/MockJug.sol";
-import { MockUsdsJoin } from "./mocks/MockUsdsJoin.sol";
+import { MockUSDSJoin } from "./mocks/MockUSDSJoin.sol";
 import { MockVat }      from "./mocks/MockVat.sol";
 import { PSMWrapper }   from "./mocks/PSMWrapper.sol";
 
@@ -82,7 +82,7 @@ contract FullStagingDeploy is Script {
     /**********************************************************************************************/
 
     address dai;
-    address daiUsds;
+    address daiUSDS;
     address livePsm;
     address psm;
     address susds;
@@ -145,7 +145,7 @@ contract FullStagingDeploy is Script {
         usds    = mainnet.input.readAddress(".usds");
         susds   = mainnet.input.readAddress(".susds");
         usdc    = mainnet.input.readAddress(".usdc");
-        daiUsds = mainnet.input.readAddress(".daiUsds");
+        daiUSDS = mainnet.input.readAddress(".daiUSDS");
         livePsm = mainnet.input.readAddress(".psm");
 
         vm.startBroadcast();
@@ -164,7 +164,7 @@ contract FullStagingDeploy is Script {
         // Step 2: Deploy mocked MCD contracts
 
         vat      = address(new MockVat(mainnet.admin));
-        usdsJoin = address(new MockUsdsJoin(mainnet.admin, vat, usds));
+        usdsJoin = address(new MockUSDSJoin(mainnet.admin, vat, usds));
         jug      = address(new MockJug());
 
         // Step 3: Transfer USDS into the join contract
@@ -241,13 +241,7 @@ contract FullStagingDeploy is Script {
 
         // Step 1: Deploy ALM controller
 
-        mainnetInst = MainnetControllerDeploy.deployFull({
-            admin   : mainnet.admin,
-            vault   : vault,
-            psm     : psm,  // Wrapper
-            daiUsds : daiUsds,
-            cctp    : mainnet.input.readAddress(".cctpTokenMessenger")
-        });
+        mainnetInst = MainnetControllerDeploy.deployFull(mainnet.admin);
 
         // Step 2: Initialize ALM system
 
@@ -265,37 +259,14 @@ contract FullStagingDeploy is Script {
             = MainnetControllerInit.CheckAddressParams({
                 admin      : mainnet.admin,
                 proxy      : mainnetInst.almProxy,
-                rateLimits : mainnetInst.rateLimits,
-                vault      : vault,
-                psm        : psm,
-                daiUsds    : mainnet.input.readAddress(".daiUsds"),
-                cctp       : mainnet.input.readAddress(".cctpTokenMessenger")
+                rateLimits : mainnetInst.rateLimits
             });
 
-        MainnetControllerInit.MintRecipient[] memory mintRecipients = new MainnetControllerInit.MintRecipient[](0);
-
-        MainnetControllerInit.LayerZeroRecipient[] memory layerZeroRecipients = new MainnetControllerInit.LayerZeroRecipient[](0);
-
-        MainnetControllerInit.MaxSlippageParams[] memory maxSlippageParams = new MainnetControllerInit.MaxSlippageParams[](0);
-
-        MainnetControllerInit.initAlmSystem(
-            vault,
-            address(usds),
-            mainnetInst,
-            configAddresses,
-            checkAddresses,
-            mintRecipients,
-            layerZeroRecipients,
-            maxSlippageParams
-        );
-
-        // Step 5: Transfer ownership of mock usdsJoin to the vault (able to mint usds)
-
-        MockUsdsJoin(usdsJoin).transferOwnership(vault);
+        MainnetControllerInit.initAlmSystem(mainnetInst, configAddresses, checkAddresses);
 
         vm.stopBroadcast();
 
-        // Step 6: Export all relevant addresses
+        // Step 3: Export all relevant addresses
 
         ScriptTools.exportContract(mainnet.output, "freezer",    mainnet.input.readAddress(".freezer"));
         ScriptTools.exportContract(mainnet.output, "relayer",    mainnet.input.readAddress(".relayer"));
@@ -304,18 +275,13 @@ contract FullStagingDeploy is Script {
         ScriptTools.exportContract(mainnet.output, "rateLimits", mainnetInst.rateLimits);
     }
 
-    function _setUpForeignALMController(Domain memory domain) internal returns (ControllerInstance memory controllerInst) {
+    function _setUpForeignController(Domain memory domain) internal returns (ControllerInstance memory controllerInst) {
         vm.selectFork(domain.forkId);
         vm.startBroadcast();
 
         // Step 1: Deploy ALM controller
 
-        controllerInst = ForeignControllerDeploy.deployFull({
-            admin : domain.admin,
-            psm   : domain.input.readAddress(".psm"),
-            usdc  : domain.input.readAddress(".usdc"),
-            cctp  : domain.input.readAddress(".cctpTokenMessenger")
-        });
+        controllerInst = ForeignControllerDeploy.deployFull(domain.admin);
 
         // Step 2: Initialize ALM system
 
@@ -329,38 +295,16 @@ contract FullStagingDeploy is Script {
         });
 
         ForeignControllerInit.CheckAddressParams memory checkAddresses = ForeignControllerInit.CheckAddressParams({
-            admin : domain.admin,
-            psm   : domain.input.readAddress(".psm"),
-            cctp  : domain.input.readAddress(".cctpTokenMessenger"),
-            usdc  : domain.input.readAddress(".usdc"),
-            susds : domain.input.readAddress(".susds"),
-            usds  : domain.input.readAddress(".usds")
+            admin      : domain.admin,
+            proxy      : domain.input.readAddress(".proxy"),
+            rateLimits : domain.input.readAddress(".rateLimits")
         });
 
-        ForeignControllerInit.MintRecipient[] memory mintRecipients = new ForeignControllerInit.MintRecipient[](1);
-
-        mintRecipients[0] = ForeignControllerInit.MintRecipient({
-            domain        : CCTPForwarder.DOMAIN_ID_CIRCLE_ETHEREUM,
-            mintRecipient : bytes32(uint256(uint160(mainnetInst.almProxy)))
-        });
-
-        ForeignControllerInit.LayerZeroRecipient[] memory layerZeroRecipients = new ForeignControllerInit.LayerZeroRecipient[](0);
-
-        ForeignControllerInit.MaxSlippageParams[] memory maxSlippageParams = new ForeignControllerInit.MaxSlippageParams[](0);
-
-        ForeignControllerInit.initAlmSystem(
-            controllerInst,
-            configAddresses,
-            checkAddresses,
-            mintRecipients,
-            layerZeroRecipients,
-            maxSlippageParams,
-            true
-        );
+        ForeignControllerInit.initAlmSystem(controllerInst, configAddresses, checkAddresses);
 
         vm.stopBroadcast();
 
-        // Step 4: Export all relevant addresses
+        // Step 3: Export all relevant addresses
 
         ScriptTools.exportContract(domain.output, "freezer",    domain.input.readAddress(".freezer"));
         ScriptTools.exportContract(domain.output, "relayer",    domain.input.readAddress(".relayer"));
@@ -400,19 +344,19 @@ contract FullStagingDeploy is Script {
         _onboardAAVEToken(mainnet, mainnetInst, AUSDS,  maxAmount18, slope18);
         _onboardAAVEToken(mainnet, mainnetInst, SPUSDC, maxAmount6,  slope6);
 
-        _onboardERC4626Token(mainnet, mainnetInst, address(controller.susde()), maxAmount18, slope18);
-        _onboardERC4626Token(mainnet, mainnetInst, Ethereum.SUSDS,              maxAmount18, slope18);
-        _onboardERC4626Token(mainnet, mainnetInst, FLUID_SUSDS_VAULT,           maxAmount18, slope18);
+        _onboardERC4626Token(mainnet, mainnetInst, Ethereum.SUSDE,    maxAmount18, slope18);
+        _onboardERC4626Token(mainnet, mainnetInst, Ethereum.SUSDS,    maxAmount18, slope18);
+        _onboardERC4626Token(mainnet, mainnetInst, FLUID_SUSDS_VAULT, maxAmount18, slope18);
 
         vm.startBroadcast();
 
-        bytes32 susdeDepositKey = RateLimitHelpers.makeAddressKey(controller.LIMIT_4626_DEPOSIT(), address(controller.susde()));
+        bytes32 susdeDepositKey = makeAddressKey(controller.LIMIT_4626_DEPOSIT(), Ethereum.SUSDE);
 
-        bytes32 syrupUsdcDepositKey  = RateLimitHelpers.makeAddressKey(controller.LIMIT_4626_DEPOSIT(), SYRUP_USDC);
-        bytes32 syrupUsdcWithdrawKey = RateLimitHelpers.makeAddressKey(controller.LIMIT_MAPLE_REDEEM(), SYRUP_USDC);
+        bytes32 syrupUSDCDepositKey  = makeAddressKey(controller.LIMIT_4626_DEPOSIT(), SYRUP_USDC);
+        bytes32 syrupUSDCWithdrawKey = makeAddressKey(controller.LIMIT_MAPLE_REDEEM(), SYRUP_USDC);
 
-        bytes32 domainKeyArbitrum = RateLimitHelpers.makeUint32Key(controller.LIMIT_USDC_TO_DOMAIN(), CCTPForwarder.DOMAIN_ID_CIRCLE_ARBITRUM_ONE);
-        bytes32 domainKeyBase     = RateLimitHelpers.makeUint32Key(controller.LIMIT_USDC_TO_DOMAIN(), CCTPForwarder.DOMAIN_ID_CIRCLE_BASE);
+        bytes32 domainKeyArbitrum = makeUint32Key(controller.LIMIT_USDC_TO_DOMAIN(), CCTPForwarder.DOMAIN_ID_CIRCLE_ARBITRUM_ONE);
+        bytes32 domainKeyBase     = makeUint32Key(controller.LIMIT_USDC_TO_DOMAIN(), CCTPForwarder.DOMAIN_ID_CIRCLE_BASE);
 
         // USDS mint/burn and cross-chain transfer rate limits
         rateLimits.setRateLimitData(domainKeyBase,                   maxAmount6,  slope6);
@@ -429,9 +373,9 @@ contract FullStagingDeploy is Script {
         rateLimits.setRateLimitData(susdeDepositKey,                   maxAmount18, slope18);
 
         // Maple-specific deposit/withdraw rate limits
-        rateLimits.setRateLimitData(syrupUsdcDepositKey, maxAmount6, slope6);
+        rateLimits.setRateLimitData(syrupUSDCDepositKey, maxAmount6, slope6);
 
-        rateLimits.setUnlimitedRateLimitData(syrupUsdcWithdrawKey);
+        rateLimits.setUnlimitedRateLimitData(syrupUSDCWithdrawKey);
 
         vm.stopBroadcast();
     }
@@ -447,7 +391,7 @@ contract FullStagingDeploy is Script {
         bytes32 psmDepositKey  = foreignController.LIMIT_PSM_DEPOSIT();
         bytes32 psmWithdrawKey = foreignController.LIMIT_PSM_WITHDRAW();
 
-        bytes32 domainKeyEthereum = RateLimitHelpers.makeUint32Key(
+        bytes32 domainKeyEthereum = makeUint32Key(
             foreignController.LIMIT_USDC_TO_DOMAIN(),
             CCTPForwarder.DOMAIN_ID_CIRCLE_ETHEREUM
         );
@@ -457,13 +401,13 @@ contract FullStagingDeploy is Script {
         susds = domain.input.readAddress(".susds");
 
         // PSM rate limits for all three assets
-        rateLimits.setRateLimitData(RateLimitHelpers.makeAddressKey(psmDepositKey,  usdc),  maxAmount6,  slope6);
-        rateLimits.setRateLimitData(RateLimitHelpers.makeAddressKey(psmWithdrawKey, usdc),  maxAmount6,  slope6);
-        rateLimits.setRateLimitData(RateLimitHelpers.makeAddressKey(psmDepositKey,  usds),  maxAmount18, slope18);
-        rateLimits.setRateLimitData(RateLimitHelpers.makeAddressKey(psmDepositKey,  susds), maxAmount18, slope18);
+        rateLimits.setRateLimitData(makeAddressKey(psmDepositKey,  usdc),  maxAmount6,  slope6);
+        rateLimits.setRateLimitData(makeAddressKey(psmWithdrawKey, usdc),  maxAmount6,  slope6);
+        rateLimits.setRateLimitData(makeAddressKey(psmDepositKey,  usds),  maxAmount18, slope18);
+        rateLimits.setRateLimitData(makeAddressKey(psmDepositKey,  susds), maxAmount18, slope18);
 
-        rateLimits.setUnlimitedRateLimitData(RateLimitHelpers.makeAddressKey(psmWithdrawKey, usds));
-        rateLimits.setUnlimitedRateLimitData(RateLimitHelpers.makeAddressKey(psmWithdrawKey, susds));
+        rateLimits.setUnlimitedRateLimitData(makeAddressKey(psmWithdrawKey, usds));
+        rateLimits.setUnlimitedRateLimitData(makeAddressKey(psmWithdrawKey, susds));
 
         // CCTP rate limits
         rateLimits.setRateLimitData(domainKeyEthereum, maxAmount6, slope6);
@@ -507,8 +451,8 @@ contract FullStagingDeploy is Script {
 
         IRateLimits rateLimits = IRateLimits(controllerInst.rateLimits);
 
-        rateLimits.setRateLimitData(RateLimitHelpers.makeAddressKey(depositKey,  aToken), maxAmount,         slope);
-        rateLimits.setRateLimitData(RateLimitHelpers.makeAddressKey(withdrawKey, aToken), type(uint256).max, 0);
+        rateLimits.setRateLimitData(makeAddressKey(depositKey,  aToken), maxAmount,         slope);
+        rateLimits.setRateLimitData(makeAddressKey(withdrawKey, aToken), type(uint256).max, 0);
 
         vm.stopBroadcast();
     }
@@ -531,8 +475,8 @@ contract FullStagingDeploy is Script {
 
         IRateLimits rateLimits = IRateLimits(controllerInst.rateLimits);
 
-        rateLimits.setRateLimitData(RateLimitHelpers.makeAddressKey(depositKey,  token), maxAmount,         slope);
-        rateLimits.setRateLimitData(RateLimitHelpers.makeAddressKey(withdrawKey, token), type(uint256).max, 0);
+        rateLimits.setRateLimitData(makeAddressKey(depositKey,  token), maxAmount,         slope);
+        rateLimits.setRateLimitData(makeAddressKey(withdrawKey, token), type(uint256).max, 0);
 
         vm.stopBroadcast();
     }
@@ -587,8 +531,8 @@ contract FullStagingDeploy is Script {
 
         // Step 3: Deploy and configure all L2 contracts, and set them as mint recipients on mainnet
 
-        arbitrumInst = _setUpForeignALMController(arbitrum);
-        baseInst     = _setUpForeignALMController(base);
+        arbitrumInst = _setUpForeignController(arbitrum);
+        baseInst     = _setUpForeignController(base);
 
         _setUpMainnetMintRecipients();
 

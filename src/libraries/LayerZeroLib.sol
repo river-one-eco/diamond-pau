@@ -25,12 +25,16 @@ library LayerZeroLib {
 
     using OptionsBuilder for bytes;
 
+    /**********************************************************************************************/
+    /*** Events                                                                                 ***/
+    /**********************************************************************************************/
+
     event LayerZeroRecipientSet(uint32 indexed destinationEndpointId, bytes32 layerZeroRecipient);
 
     bytes32 public constant LIMIT_TRANSFER = keccak256("LIMIT_LAYERZERO_TRANSFER");
 
     /**********************************************************************************************/
-    /*** External functions                                                                     ***/
+    /*** External interactive functions                                                         ***/
     /**********************************************************************************************/
 
     function setRecipient(

@@ -19,7 +19,18 @@ interface IERC20Like {
 
 abstract contract DaiUsds_TestBase is ForkTestBase {
 
+    IERC20Like internal constant DAI  = IERC20Like(Ethereum.DAI);
     IERC20Like internal constant USDS = IERC20Like(Ethereum.USDS);
+
+    uint256 internal daiSupply;
+    uint256 internal usdsSupply;
+
+    function setUp() public override {
+        super.setUp();
+
+        daiSupply  = DAI.totalSupply();
+        usdsSupply = USDS.totalSupply();
+    }
 
 }
 
@@ -35,37 +46,36 @@ contract MainnetController_DAIUSDS_SwapUSDSToDAI_Tests is DaiUsds_TestBase {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            RELAYER_ROLE
         ));
         mainnetController.swapUSDSToDAI(1_000_000e18);
     }
 
     function test_swapUSDSToDAI() external {
-        vm.prank(relayer);
-        mainnetController.mintUSDS(1_000_000e18);
+        deal(Ethereum.USDS, almProxy, 1_000_000e18);
 
-        assertEq(USDS.balanceOf(address(almProxy)), 1_000_000e18);
-        assertEq(USDS.totalSupply(),                USDS_SUPPLY + 1_000_000e18);
+        assertEq(USDS.balanceOf(almProxy), 1_000_000e18);
+        assertEq(USDS.totalSupply(),       usdsSupply);  // Supply not updated on deal
 
-        assertEq(dai.balanceOf(address(almProxy)), 0);
-        assertEq(dai.totalSupply(),                DAI_SUPPLY);
+        assertEq(DAI.balanceOf(almProxy), 0);
+        assertEq(DAI.totalSupply(),       daiSupply);
 
-        assertEq(USDS.allowance(address(almProxy), Ethereum.DAI_USDS), 0);
+        assertEq(USDS.allowance(almProxy, Ethereum.DAI_USDS), 0);
 
         vm.record();
 
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         mainnetController.swapUSDSToDAI(1_000_000e18);
 
         _assertReentrancyGuardWrittenToTwice();
 
-        assertEq(USDS.balanceOf(address(almProxy)), 0);
-        assertEq(USDS.totalSupply(),                USDS_SUPPLY);
+        assertEq(USDS.balanceOf(almProxy), 0);
+        assertEq(USDS.totalSupply(),       usdsSupply - 1_000_000e18);
 
-        assertEq(dai.balanceOf(address(almProxy)), 1_000_000e18);
-        assertEq(dai.totalSupply(),                DAI_SUPPLY + 1_000_000e18);
+        assertEq(DAI.balanceOf(almProxy), 1_000_000e18);
+        assertEq(DAI.totalSupply(),       daiSupply + 1_000_000e18);
 
-        assertEq(USDS.allowance(address(almProxy), Ethereum.DAI_USDS), 0);
+        assertEq(USDS.allowance(almProxy, Ethereum.DAI_USDS), 0);
     }
 
 }
@@ -82,36 +92,36 @@ contract MainnetController_DAIUSDS_SwapDAIToUSDS_Tests is DaiUsds_TestBase {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            RELAYER_ROLE
         ));
         mainnetController.swapDAIToUSDS(1_000_000e18);
     }
 
     function test_swapDAIToUSDS() external {
-        deal(address(dai), address(almProxy), 1_000_000e18);
+        deal(Ethereum.DAI, almProxy, 1_000_000e18);
 
-        assertEq(USDS.balanceOf(address(almProxy)), 0);
-        assertEq(USDS.totalSupply(),                USDS_SUPPLY);
+        assertEq(USDS.balanceOf(almProxy), 0);
+        assertEq(USDS.totalSupply(),       usdsSupply);
 
-        assertEq(dai.balanceOf(address(almProxy)), 1_000_000e18);
-        assertEq(dai.totalSupply(),                DAI_SUPPLY);  // Supply not updated on deal
+        assertEq(DAI.balanceOf(almProxy), 1_000_000e18);
+        assertEq(DAI.totalSupply(),       daiSupply);  // Supply not updated on deal
 
-        assertEq(dai.allowance(address(almProxy), Ethereum.DAI_USDS), 0);
+        assertEq(DAI.allowance(almProxy, Ethereum.DAI_USDS), 0);
 
         vm.record();
 
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         mainnetController.swapDAIToUSDS(1_000_000e18);
 
         _assertReentrancyGuardWrittenToTwice();
 
-        assertEq(USDS.balanceOf(address(almProxy)), 1_000_000e18);
-        assertEq(USDS.totalSupply(),                USDS_SUPPLY + 1_000_000e18);
+        assertEq(USDS.balanceOf(almProxy), 1_000_000e18);
+        assertEq(USDS.totalSupply(),       usdsSupply + 1_000_000e18);
 
-        assertEq(dai.balanceOf(address(almProxy)), 0);
-        assertEq(dai.totalSupply(),                DAI_SUPPLY - 1_000_000e18);
+        assertEq(DAI.balanceOf(almProxy), 0);
+        assertEq(DAI.totalSupply(),       daiSupply - 1_000_000e18);
 
-        assertEq(dai.allowance(address(almProxy), Ethereum.DAI_USDS), 0);
+        assertEq(DAI.allowance(almProxy, Ethereum.DAI_USDS), 0);
     }
 
 }

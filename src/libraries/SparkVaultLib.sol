@@ -14,10 +14,14 @@ interface ISparkVaultLike {
 
 library SparkVaultLib {
 
+    /**********************************************************************************************/
+    /*** Constants                                                                              ***/
+    /**********************************************************************************************/
+
     bytes32 public constant LIMIT_TAKE = keccak256("LIMIT_SPARK_VAULT_TAKE");
 
     /**********************************************************************************************/
-    /*** External functions                                                                     ***/
+    /*** External interactive functions                                                         ***/
     /**********************************************************************************************/
 
     function take(address proxy, address rateLimits, address sparkVault, uint256 assetAmount)

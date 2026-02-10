@@ -27,14 +27,14 @@ contract MainnetController_BUIDL_Deposit_Tests is BUIDL_TestBase {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            RELAYER_ROLE
         ));
         mainnetController.transferAsset(Ethereum.USDC, buidlDeposit, 1_000_000e6);
     }
 
     function test_transferAsset_zeroMaxAmount() external {
         vm.expectRevert("RateLimits/zero-maxAmount");
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         mainnetController.transferAsset(Ethereum.USDC, buidlDeposit, 0);
     }
 
@@ -48,13 +48,13 @@ contract MainnetController_BUIDL_Deposit_Tests is BUIDL_TestBase {
         vm.prank(Ethereum.SPARK_PROXY);
         rateLimits.setRateLimitData(key, 1_000_000e6, uint256(1_000_000e6) / 1 days);
 
-        deal(Ethereum.USDC, address(almProxy), 1_000_000e6);
+        deal(Ethereum.USDC, almProxy, 1_000_000e6);
 
         vm.expectRevert("RateLimits/rate-limit-exceeded");
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         mainnetController.transferAsset(Ethereum.USDC, buidlDeposit, 1_000_000e6 + 1);
 
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         mainnetController.transferAsset(Ethereum.USDC, buidlDeposit, 1_000_000e6);
     }
 
@@ -68,20 +68,20 @@ contract MainnetController_BUIDL_Deposit_Tests is BUIDL_TestBase {
         vm.prank(Ethereum.SPARK_PROXY);
         rateLimits.setRateLimitData(key, 1_000_000e6, uint256(1_000_000e6) / 1 days);
 
-        deal(Ethereum.USDC, address(almProxy), 1_000_000e6);
+        deal(Ethereum.USDC, almProxy, 1_000_000e6);
 
         assertEq(rateLimits.getCurrentRateLimit(key), 1_000_000e6);
 
-        assertEq(USDC.balanceOf(address(almProxy)), 1_000_000e6);
-        assertEq(USDC.balanceOf(buidlDeposit),      0);
+        assertEq(USDC.balanceOf(almProxy),     1_000_000e6);
+        assertEq(USDC.balanceOf(buidlDeposit), 0);
 
-        vm.prank(relayer);
+        vm.prank(RELAYER);
         mainnetController.transferAsset(Ethereum.USDC, buidlDeposit, 1_000_000e6);
 
         assertEq(rateLimits.getCurrentRateLimit(key), 0);
 
-        assertEq(USDC.balanceOf(address(almProxy)), 0);
-        assertEq(USDC.balanceOf(buidlDeposit),      1_000_000e6);
+        assertEq(USDC.balanceOf(almProxy),     0);
+        assertEq(USDC.balanceOf(buidlDeposit), 1_000_000e6);
     }
 
 }

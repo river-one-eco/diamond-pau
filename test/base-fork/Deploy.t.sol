@@ -1,66 +1,51 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.21;
 
+import { Base } from "../../lib/spark-address-registry/src/Base.sol";
+
 import { ControllerInstance }      from "../../deploy/ControllerInstance.sol";
 import { ForeignControllerDeploy } from "../../deploy/ControllerDeploy.sol";
 
-import { Base } from "../../lib/spark-address-registry/src/Base.sol";
+import { IALMProxy }   from "../../src/interfaces/IALMProxy.sol";
+import { IRateLimits } from "../../src/interfaces/IRateLimits.sol";
 
-import { ALMProxy }          from "../../src/ALMProxy.sol";
 import { ForeignController } from "../../src/ForeignController.sol";
-import { RateLimits }        from "../../src/RateLimits.sol";
 
 import { ForkTestBase } from "./ForkTestBase.t.sol";
 
-contract ForeignController_Deploy_SuccessTests is ForkTestBase {
+contract ForeignController_Deploy_Tests is ForkTestBase {
 
     function test_deployFull() external {
         // Perform new deployments against existing fork environment
 
-        ControllerInstance memory controllerInst = ForeignControllerDeploy.deployFull({
-            admin      : Base.SPARK_EXECUTOR,
-            psm        : Base.PSM3,
-            usdc       : Base.USDC,
-            cctp       : Base.CCTP_TOKEN_MESSENGER
-        });
+        ControllerInstance memory controllerInst = ForeignControllerDeploy.deployFull(Base.SPARK_EXECUTOR);
 
-        ALMProxy          newAlmProxy   = ALMProxy(payable(controllerInst.almProxy));
-        ForeignController newController = ForeignController(controllerInst.controller);
-        RateLimits        newRateLimits = RateLimits(controllerInst.rateLimits);
+        assertEq(IALMProxy(controllerInst.almProxy).hasRole(DEFAULT_ADMIN_ROLE, Base.SPARK_EXECUTOR), true);
+        assertEq(IALMProxy(controllerInst.almProxy).hasRole(DEFAULT_ADMIN_ROLE, address(this)),       false);  // Deployer never gets admin
 
-        assertEq(newAlmProxy.hasRole(DEFAULT_ADMIN_ROLE, Base.SPARK_EXECUTOR), true);
-        assertEq(newAlmProxy.hasRole(DEFAULT_ADMIN_ROLE, address(this)),       false);  // Deployer never gets admin
+        assertEq(IRateLimits(controllerInst.rateLimits).hasRole(DEFAULT_ADMIN_ROLE, Base.SPARK_EXECUTOR), true);
+        assertEq(IRateLimits(controllerInst.rateLimits).hasRole(DEFAULT_ADMIN_ROLE, address(this)),       false);  // Deployer never gets admin
 
-        assertEq(newRateLimits.hasRole(DEFAULT_ADMIN_ROLE, Base.SPARK_EXECUTOR), true);
-        assertEq(newRateLimits.hasRole(DEFAULT_ADMIN_ROLE, address(this)),       false);  // Deployer never gets admin
-
-        _assertControllerInitState(newController, address(newAlmProxy), address(newRateLimits));
+        _assertControllerInitState(controllerInst.controller, controllerInst.almProxy, controllerInst.rateLimits);
     }
 
     function test_deployController() external {
         // Perform new deployments against existing fork environment
 
-        ForeignController newController = ForeignController(ForeignControllerDeploy.deployController({
-            admin      : Base.SPARK_EXECUTOR,
-            almProxy   : address(almProxy),
-            rateLimits : address(rateLimits),
-            psm        : Base.PSM3,
-            usdc       : Base.USDC,
-            cctp       : Base.CCTP_TOKEN_MESSENGER
-        }));
+        address newController = ForeignControllerDeploy.deployController(Base.SPARK_EXECUTOR, almProxy, address(rateLimits));
 
-        _assertControllerInitState(newController, address(almProxy), address(rateLimits));
+        _assertControllerInitState(newController, almProxy, address(rateLimits));
     }
 
-    function _assertControllerInitState(ForeignController controller, address almProxy, address rateLimits) internal view {
-        assertEq(controller.hasRole(DEFAULT_ADMIN_ROLE, Base.SPARK_EXECUTOR), true);
-        assertEq(controller.hasRole(DEFAULT_ADMIN_ROLE, address(this)),       false);  // Deployer never gets admin
+    function _assertControllerInitState(address controller, address almProxy, address rateLimits)
+        internal
+        view
+    {
+        assertEq(ForeignController(controller).hasRole(DEFAULT_ADMIN_ROLE, Base.SPARK_EXECUTOR), true);
+        assertEq(ForeignController(controller).hasRole(DEFAULT_ADMIN_ROLE, address(this)),       false);  // Deployer never gets admin
 
-        assertEq(address(controller.proxy()),      almProxy);
-        assertEq(address(controller.rateLimits()), rateLimits);
-        assertEq(address(controller.psm()),        Base.PSM3);
-        assertEq(address(controller.usdc()),       Base.USDC);
-        assertEq(address(controller.cctp()),       Base.CCTP_TOKEN_MESSENGER);
+        assertEq(ForeignController(controller).proxy(),      almProxy);
+        assertEq(ForeignController(controller).rateLimits(), rateLimits);
     }
 
 }

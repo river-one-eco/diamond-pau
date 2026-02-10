@@ -23,12 +23,20 @@ library UniswapV4Lib {
         uint24 maxTickSpacing;
     }
 
+    /**********************************************************************************************/
+    /*** Events                                                                                 ***/
+    /**********************************************************************************************/
+
     event UniswapV4TickLimitsSet(
         bytes32 indexed poolId,
         int24           tickLowerMin,
         int24           tickUpperMax,
         uint24          maxTickSpacing
     );
+
+    /**********************************************************************************************/
+    /*** Constants                                                                              ***/
+    /**********************************************************************************************/
 
     bytes32 public constant LIMIT_DEPOSIT  = keccak256("LIMIT_UNISWAP_V4_DEPOSIT");
     bytes32 public constant LIMIT_WITHDRAW = keccak256("LIMIT_UNISWAP_V4_WITHDRAW");
@@ -42,7 +50,7 @@ library UniswapV4Lib {
     address internal constant _ROUTER           = 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af;
 
     /**********************************************************************************************/
-    /*** Interactive Functions                                                                  ***/
+    /*** External interactive functions                                                         ***/
     /**********************************************************************************************/
 
     function setTickLimits(
@@ -275,7 +283,7 @@ library UniswapV4Lib {
     }
 
     /**********************************************************************************************/
-    /*** Internal Interactive Functions                                                         ***/
+    /*** Internal interactive functions                                                         ***/
     /**********************************************************************************************/
 
     function _approveWithPermit2(address proxy, address token, address spender, uint128 amount)
@@ -404,7 +412,7 @@ library UniswapV4Lib {
     }
 
     /**********************************************************************************************/
-    /*** Internal View/Pure Functions                                                           ***/
+    /*** Internal view/pure functions                                                           ***/
     /**********************************************************************************************/
 
     function _checkTickLimits(TickLimits memory limits, int24 tickLower, int24 tickUpper)

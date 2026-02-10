@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.21;
 
+import { Ethereum } from "../../lib/spark-address-registry/src/Ethereum.sol";
+
 import { IRateLimits } from "../interfaces/IRateLimits.sol";
 import { IALMProxy }   from "../interfaces/IALMProxy.sol";
 
@@ -36,50 +38,49 @@ interface IPSMLike {
 
 library PSMLib {
 
+    /**********************************************************************************************/
+    /*** Constants                                                                              ***/
+    /**********************************************************************************************/
+
     bytes32 public constant LIMIT_USDS_TO_USDC = keccak256("LIMIT_USDS_TO_USDC");
 
     /**********************************************************************************************/
-    /*** External functions                                                                     ***/
+    /*** External interactive functions                                                         ***/
     /**********************************************************************************************/
 
     function swapUSDSToUSDC(
         address proxy,
         address rateLimits,
-        address daiUSDS,
-        address psm,
-        address usds,
-        address dai,
         uint256 usdcAmount
     )
         external
     {
         IRateLimits(rateLimits).triggerRateLimitDecrease(LIMIT_USDS_TO_USDC, usdcAmount);
 
-        uint256 usdsAmount = usdcAmount * IPSMLike(psm).to18ConversionFactor();
+        uint256 usdsAmount = usdcAmount * to18ConversionFactor();
 
         // Approve USDS to DaiUsds migrator from the proxy (assumes the proxy has enough USDS).
-        _approve(usds, proxy, daiUSDS, usdsAmount);
+        _approve(Ethereum.USDS, proxy, Ethereum.DAI_USDS, usdsAmount);
 
         // Swap USDS to DAI 1:1
         IALMProxy(proxy).doCall(
-            daiUSDS,
+            Ethereum.DAI_USDS,
             abi.encodeCall(IDAIUSDSLike.usdsToDai, (proxy, usdsAmount))
         );
 
         // Approve DAI to PSM from the proxy because conversion from USDS to DAI was 1:1.
-        _approve(dai, proxy, psm, usdsAmount);
+        _approve(Ethereum.DAI, proxy, Ethereum.PSM, usdsAmount);
 
         // Swap DAI to USDC through the PSM.
-        IALMProxy(proxy).doCall(psm, abi.encodeCall(IPSMLike.buyGemNoFee, (proxy, usdcAmount)));
+        IALMProxy(proxy).doCall(
+            Ethereum.PSM,
+            abi.encodeCall(IPSMLike.buyGemNoFee, (proxy, usdcAmount))
+        );
     }
 
     function swapUSDCToUSDS(
         address proxy,
         address rateLimits,
-        address daiUSDS,
-        address psm,
-        address dai,
-        address usdc,
         uint256 usdcAmount
     )
         external
@@ -87,49 +88,54 @@ library PSMLib {
         IRateLimits(rateLimits).triggerRateLimitIncrease(LIMIT_USDS_TO_USDC, usdcAmount);
 
         // Approve USDC to PSM from the proxy (assumes the proxy has enough USDC).
-        _approve(usdc, proxy, psm, usdcAmount);
+        _approve(Ethereum.USDC, proxy, Ethereum.PSM, usdcAmount);
 
-        uint256 conversionFactor = IPSMLike(psm).to18ConversionFactor();
+        uint256 conversionFactor = to18ConversionFactor();
         uint256 daiAmount        = usdcAmount * conversionFactor;
 
         // Swap all if amount is less than or equal to the max USDC that can be swapped to DAI in
         // one call, else refill and swap in chunks within the limits.
-        if (usdcAmount <= IERC20Like(dai).balanceOf(psm) / conversionFactor) {
-            _swapUSDCToDAI(proxy, psm, usdcAmount);
+        if (usdcAmount <= IERC20Like(Ethereum.DAI).balanceOf(Ethereum.PSM) / conversionFactor) {
+            _swapUSDCToDAI(proxy, Ethereum.PSM, usdcAmount);
         } else {
             // Refill the PSM with DAI as many times as needed to get to the full `usdcAmount`.
             // If the PSM cannot be filled with the full amount, psm.fill() will revert with
             // `DssLitePsm/nothing-to-fill` since rush() will return 0. This is desired behavior
             // because this function should only succeed if the full `usdcAmount` can be swapped.
             while (usdcAmount > 0) {
-                IPSMLike(psm).fill();
+                IPSMLike(Ethereum.PSM).fill();
 
                 // Max USDC that can be swapped to DAI in one call/fill.
-                uint256 limit      = IERC20Like(dai).balanceOf(psm) / conversionFactor;
+                uint256 limit = IERC20Like(Ethereum.DAI).balanceOf(Ethereum.PSM) / conversionFactor;
+
                 uint256 swapAmount = usdcAmount <= limit ? usdcAmount : limit;
 
-                _swapUSDCToDAI(proxy, psm, swapAmount);
+                _swapUSDCToDAI(proxy, Ethereum.PSM, swapAmount);
 
                 usdcAmount -= swapAmount;
             }
         }
 
         // Approve DAI to DaiUsds migrator from the proxy (assumes the proxy has enough DAI).
-        _approve(dai, proxy, daiUSDS, daiAmount);
+        _approve(Ethereum.DAI, proxy, Ethereum.DAI_USDS, daiAmount);
 
         // Swap DAI to USDS 1:1.
         IALMProxy(proxy).doCall(
-            daiUSDS,
+            Ethereum.DAI_USDS,
             abi.encodeCall(IDAIUSDSLike.daiToUsds, (proxy, daiAmount))
         );
     }
 
-    function to18ConversionFactor(address psm) external view returns (uint256) {
-        return IPSMLike(psm).to18ConversionFactor();
+    /**********************************************************************************************/
+    /*** External view/pure functions                                                           ***/
+    /**********************************************************************************************/
+
+    function to18ConversionFactor() public view returns (uint256) {
+        return IPSMLike(Ethereum.PSM).to18ConversionFactor();
     }
 
     /**********************************************************************************************/
-    /*** Helper functions                                                                       ***/
+    /*** Internal interactive functions                                                         ***/
     /**********************************************************************************************/
 
     // NOTE: As swaps are only done between USDC and USDS, no need for `ApproveLib`.

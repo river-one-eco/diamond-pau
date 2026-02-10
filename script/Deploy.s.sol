@@ -33,13 +33,7 @@ contract DeployMainnetFull is Script {
             ? config.readAddress(".psmWrapper")
             : config.readAddress(".psm");
 
-        ControllerInstance memory instance = MainnetControllerDeploy.deployFull({
-            admin   : config.readAddress(".admin"),
-            vault   : config.readAddress(".allocatorVault"),
-            psm     : psm,
-            daiUsds : config.readAddress(".daiUsds"),
-            cctp    : config.readAddress(".cctpTokenMessenger")
-        });
+        ControllerInstance memory instance = MainnetControllerDeploy.deployFull(config.readAddress(".admin"));
 
         vm.stopBroadcast();
 
@@ -80,11 +74,7 @@ contract DeployMainnetController is Script {
         address controller = MainnetControllerDeploy.deployController({
             admin      : config.readAddress(".admin"),
             almProxy   : config.readAddress(".almProxy"),
-            rateLimits : config.readAddress(".rateLimits"),
-            vault      : config.readAddress(".allocatorVault"),
-            psm        : psm,
-            daiUsds    : config.readAddress(".daiUsds"),
-            cctp       : config.readAddress(".cctpTokenMessenger")
+            rateLimits : config.readAddress(".rateLimits")
         });
 
         vm.stopBroadcast();
@@ -115,12 +105,7 @@ contract DeployForeignFull is Script {
 
         vm.startBroadcast();
 
-        ControllerInstance memory instance = ForeignControllerDeploy.deployFull({
-            admin : config.readAddress(".admin"),
-            psm   : config.readAddress(".psm"),
-            usdc  : config.readAddress(".usdc"),
-            cctp  : config.readAddress(".cctpTokenMessenger")
-        });
+        ControllerInstance memory instance = ForeignControllerDeploy.deployFull(config.readAddress(".admin"));
 
         vm.stopBroadcast();
 
@@ -157,10 +142,7 @@ contract DeployForeignController is Script {
         address controller = ForeignControllerDeploy.deployController({
             admin      : config.readAddress(".admin"),
             almProxy   : config.readAddress(".almProxy"),
-            rateLimits : config.readAddress(".rateLimits"),
-            psm        : config.readAddress(".psm"),
-            usdc       : config.readAddress(".usdc"),
-            cctp       : config.readAddress(".cctpTokenMessenger")
+            rateLimits : config.readAddress(".rateLimits")
         });
 
         vm.stopBroadcast();

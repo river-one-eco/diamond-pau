@@ -22,11 +22,15 @@ interface IFarmLike {
 
 library FarmLib {
 
+    /**********************************************************************************************/
+    /*** Constants                                                                              ***/
+    /**********************************************************************************************/
+
     bytes32 public constant LIMIT_DEPOSIT  = keccak256("LIMIT_FARM_DEPOSIT");
     bytes32 public constant LIMIT_WITHDRAW = keccak256("LIMIT_FARM_WITHDRAW");
 
     /**********************************************************************************************/
-    /*** External functions                                                                     ***/
+    /*** External interactive functions                                                         ***/
     /**********************************************************************************************/
 
     function deposit(address proxy, address rateLimits, address farm, uint256 amount) external {
@@ -44,6 +48,10 @@ library FarmLib {
 
         IALMProxy(proxy).doCall(farm, abi.encodeCall(IFarmLike.getReward, ()));
     }
+
+    /**********************************************************************************************/
+    /*** Internal interactive functions                                                         ***/
+    /**********************************************************************************************/
 
     function _decreaseRateLimit(address rateLimits, bytes32 key, address farm, uint256 amount)
         internal

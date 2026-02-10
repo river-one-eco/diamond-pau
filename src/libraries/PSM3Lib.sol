@@ -22,8 +22,16 @@ interface IPSM3Like {
 
 library PSM3Lib {
 
+    /**********************************************************************************************/
+    /*** Constants                                                                              ***/
+    /**********************************************************************************************/
+
     bytes32 public constant LIMIT_DEPOSIT  = keccak256("LIMIT_PSM_DEPOSIT");
     bytes32 public constant LIMIT_WITHDRAW = keccak256("LIMIT_PSM_WITHDRAW");
+
+    /**********************************************************************************************/
+    /*** External interactive functions                                                         ***/
+    /**********************************************************************************************/
 
     function deposit(
         address proxy,
@@ -70,6 +78,10 @@ library PSM3Lib {
 
         _decreaseRateLimit(rateLimits, LIMIT_WITHDRAW, asset, assetsWithdrawn);
     }
+
+    /**********************************************************************************************/
+    /*** Internal interactive functions                                                         ***/
+    /**********************************************************************************************/
 
     function _decreaseRateLimit(address rateLimits, bytes32 key, address asset, uint256 amount)
         internal

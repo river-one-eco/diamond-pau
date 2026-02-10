@@ -10,10 +10,14 @@ import { makeAddressAddressKey } from "../RateLimitHelpers.sol";
 
 library TransferAssetLib {
 
+    /**********************************************************************************************/
+    /*** Constants                                                                              ***/
+    /**********************************************************************************************/
+
     bytes32 public constant LIMIT_TRANSFER = keccak256("LIMIT_ASSET_TRANSFER");
 
     /**********************************************************************************************/
-    /*** External functions                                                                     ***/
+    /*** External interactive functions                                                         ***/
     /**********************************************************************************************/
 
     function transfer(

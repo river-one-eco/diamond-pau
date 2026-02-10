@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.21;
 
+import { Ethereum } from "../../lib/spark-address-registry/src/Ethereum.sol";
+
 import { IALMProxy }   from "../interfaces/IALMProxy.sol";
 import { IRateLimits } from "../interfaces/IRateLimits.sol";
 
@@ -12,29 +14,27 @@ interface IUSTBLike {
 
 }
 
-// NOTE: Argument names imply that this is only compatible with USTB and USDC.
 library SuperstateLib {
+
+    /**********************************************************************************************/
+    /*** Constants                                                                              ***/
+    /**********************************************************************************************/
 
     bytes32 public constant LIMIT_SUBSCRIBE = keccak256("LIMIT_SUPERSTATE_SUBSCRIBE");
 
     /**********************************************************************************************/
-    /*** External functions                                                                     ***/
+    /*** External interactive functions                                                         ***/
     /**********************************************************************************************/
 
-    function subscribe(
-        address proxy,
-        address rateLimits,
-        address usdc,
-        address ustb,
-        uint256 usdcAmount
-    )
-        external
-    {
+    function subscribe(address proxy, address rateLimits, uint256 usdcAmount) external {
         IRateLimits(rateLimits).triggerRateLimitDecrease(LIMIT_SUBSCRIBE, usdcAmount);
 
-        ApproveLib.approve(usdc, proxy, ustb, usdcAmount);
+        ApproveLib.approve(Ethereum.USDC, proxy, Ethereum.USTB, usdcAmount);
 
-        IALMProxy(proxy).doCall(ustb, abi.encodeCall(IUSTBLike.subscribe, (usdcAmount, usdc)));
+        IALMProxy(proxy).doCall(
+            Ethereum.USTB,
+            abi.encodeCall(IUSTBLike.subscribe, (usdcAmount, Ethereum.USDC))
+        );
     }
 
 }

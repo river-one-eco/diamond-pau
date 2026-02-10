@@ -3,16 +3,7 @@ pragma solidity ^0.8.21;
 
 import { Test } from "../../lib/forge-std/src/Test.sol";
 
-import { IERC20 } from "../../lib/forge-std/src/interfaces/IERC20.sol";
-
-import { ERC20Mock } from "../../lib/openzeppelin-contracts/contracts/mocks/token/ERC20Mock.sol";
-
 import { Base } from "../../lib/spark-address-registry/src/Base.sol";
-
-import { PSM3Deploy } from "../../lib/spark-psm/deploy/PSM3Deploy.sol";
-import { IPSM3 }      from "../../lib/spark-psm/src/PSM3.sol";
-
-import { CCTPForwarder } from "../../lib/xchain-helpers/src/forwarders/CCTPForwarder.sol";
 
 import { ForeignControllerDeploy }       from "../../deploy/ControllerDeploy.sol";
 import { ControllerInstance }            from "../../deploy/ControllerInstance.sol";
@@ -20,7 +11,6 @@ import { ForeignControllerInit as Init } from "../../deploy/ForeignControllerIni
 
 import { ALMProxy }          from "../../src/ALMProxy.sol";
 import { ForeignController } from "../../src/ForeignController.sol";
-import { RateLimitHelpers }  from "../../src/RateLimitHelpers.sol";
 import { RateLimits }        from "../../src/RateLimits.sol";
 
 abstract contract ForkTestBase is Test {
@@ -35,153 +25,55 @@ abstract contract ForkTestBase is Test {
     bytes32 internal constant _REENTRANCY_GUARD_NOT_ENTERED = bytes32(uint256(1));
     bytes32 internal constant _REENTRANCY_GUARD_ENTERED     = bytes32(uint256(2));
 
-    bytes32 constant DEFAULT_ADMIN_ROLE = 0x00;
+    bytes32 internal constant DEFAULT_ADMIN_ROLE = 0x00;
 
-    bytes32 CONTROLLER;
-    bytes32 FREEZER;
-    bytes32 RELAYER;
+    bytes32 internal constant CONTROLLER_ROLE = keccak256("CONTROLLER");
+    bytes32 internal constant FREEZER_ROLE    = keccak256("FREEZER");
+    bytes32 internal constant RELAYER_ROLE    = keccak256("RELAYER");
 
-    address freezer = Base.ALM_FREEZER_MULTISIG;
-    address relayer = Base.ALM_RELAYER_MULTISIG;
-
-    address pocket = makeAddr("pocket");
-
-    /**********************************************************************************************/
-    /*** Base addresses                                                                         ***/
-    /**********************************************************************************************/
-
-    address constant SPARK_EXECUTOR      = Base.SPARK_EXECUTOR;
-    address constant CCTP_MESSENGER_BASE = Base.CCTP_TOKEN_MESSENGER;
-    address constant SSR_ORACLE          = Base.SSR_AUTH_ORACLE;
+    address internal constant FREEZER = Base.ALM_FREEZER_MULTISIG;
+    address internal constant RELAYER = Base.ALM_RELAYER_MULTISIG;
 
     /**********************************************************************************************/
     /*** ALM system deployments                                                                 ***/
     /**********************************************************************************************/
 
-    ALMProxy          almProxy;
-    RateLimits        rateLimits;
-    ForeignController foreignController;
+    address payable internal almProxy;
 
-    /**********************************************************************************************/
-    /*** Casted addresses for testing                                                           ***/
-    /**********************************************************************************************/
-
-    IERC20 usdsBase;
-    IERC20 susdsBase;
-    IERC20 usdcBase;
-
-    IPSM3 psmBase;
+    RateLimits        internal rateLimits;
+    ForeignController internal foreignController;
 
     /**********************************************************************************************/
     /*** Test setup                                                                             ***/
     /**********************************************************************************************/
 
     function setUp() public virtual {
-        /*** Step 1: Set up environment, deploy mock addresses ***/
-
         vm.createSelectFork(getChain('base').rpcUrl, _getBlock());
 
-        usdsBase  = IERC20(address(new ERC20Mock()));
-        susdsBase = IERC20(address(new ERC20Mock()));
-        usdcBase  = IERC20(Base.USDC);
+        ControllerInstance memory controllerInst = ForeignControllerDeploy.deployFull(Base.SPARK_EXECUTOR);
 
-        /*** Step 2: Deploy and configure PSM with a pocket ***/
-
-        deal(address(usdsBase), address(this), 1e18);  // For seeding PSM during deployment
-
-        psmBase = IPSM3(PSM3Deploy.deploy(
-            SPARK_EXECUTOR, Base.USDC, address(usdsBase), address(susdsBase), SSR_ORACLE
-        ));
-
-        vm.prank(SPARK_EXECUTOR);
-        psmBase.setPocket(pocket);
-
-        vm.prank(pocket);
-        usdcBase.approve(address(psmBase), type(uint256).max);
-
-        /*** Step 3: Deploy ALM system ***/
-
-        ControllerInstance memory controllerInst = ForeignControllerDeploy.deployFull({
-            admin : SPARK_EXECUTOR,
-            psm   : address(psmBase),
-            usdc  : Base.USDC,
-            cctp  : CCTP_MESSENGER_BASE
-        });
-
-        almProxy          = ALMProxy(payable(controllerInst.almProxy));
+        almProxy          = payable(controllerInst.almProxy);
         rateLimits        = RateLimits(controllerInst.rateLimits);
         foreignController = ForeignController(controllerInst.controller);
 
-        CONTROLLER = almProxy.CONTROLLER();
-        FREEZER    = foreignController.FREEZER();
-        RELAYER    = foreignController.RELAYER();
-
-        /*** Step 3: Configure ALM system through Spark governance (Spark spell payload) ***/
-
         address[] memory relayers = new address[](1);
-        relayers[0] = relayer;
+        relayers[0] = RELAYER;
 
         Init.ConfigAddressParams memory configAddresses = Init.ConfigAddressParams({
-            freezer       : freezer,
+            freezer       : FREEZER,
             relayers      : relayers,
             oldController : address(0)
         });
 
         Init.CheckAddressParams memory checkAddresses = Init.CheckAddressParams({
-            admin : Base.SPARK_EXECUTOR,
-            psm   : address(psmBase),
-            cctp  : Base.CCTP_TOKEN_MESSENGER,
-            usdc  : address(usdcBase),
-            susds : address(susdsBase),
-            usds  : address(usdsBase)
+            admin      : Base.SPARK_EXECUTOR,
+            proxy      : almProxy,
+            rateLimits : address(rateLimits)
         });
 
-        Init.MintRecipient[] memory mintRecipients = new Init.MintRecipient[](1);
+        vm.startPrank(Base.SPARK_EXECUTOR);
 
-        mintRecipients[0] = Init.MintRecipient({
-            domain        : CCTPForwarder.DOMAIN_ID_CIRCLE_ETHEREUM,
-            mintRecipient : bytes32(uint256(uint160(makeAddr("ethereumAlmProxy"))))
-        });
-
-        Init.LayerZeroRecipient[] memory layerZeroRecipients = new Init.LayerZeroRecipient[](0);
-
-        Init.MaxSlippageParams[] memory maxSlippageParams = new Init.MaxSlippageParams[](0);
-
-        vm.startPrank(SPARK_EXECUTOR);
-
-        Init.initAlmSystem(
-            controllerInst,
-            configAddresses,
-            checkAddresses,
-            mintRecipients,
-            layerZeroRecipients,
-            maxSlippageParams,
-            true
-        );
-
-        uint256 usdcMaxAmount = 5_000_000e6;
-        uint256 usdcSlope     = uint256(1_000_000e6) / 4 hours;
-        uint256 usdsMaxAmount = 5_000_000e18;
-        uint256 usdsSlope     = uint256(1_000_000e18) / 4 hours;
-
-        bytes32 depositKey  = foreignController.LIMIT_PSM_DEPOSIT();
-        bytes32 withdrawKey = foreignController.LIMIT_PSM_WITHDRAW();
-
-        bytes32 domainKeyEthereum = RateLimitHelpers.makeUint32Key(
-            foreignController.LIMIT_USDC_TO_DOMAIN(),
-            CCTPForwarder.DOMAIN_ID_CIRCLE_ETHEREUM
-        );
-
-        // NOTE: Using minimal config for test base setup
-        rateLimits.setRateLimitData(RateLimitHelpers.makeAddressKey(depositKey,  address(usdcBase)),  usdcMaxAmount, usdcSlope);
-        rateLimits.setRateLimitData(RateLimitHelpers.makeAddressKey(withdrawKey, address(usdcBase)),  usdcMaxAmount, usdcSlope);
-        rateLimits.setRateLimitData(RateLimitHelpers.makeAddressKey(depositKey,  address(usdsBase)),  usdsMaxAmount, usdsSlope);
-        rateLimits.setRateLimitData(RateLimitHelpers.makeAddressKey(depositKey,  address(susdsBase)), usdsMaxAmount, usdsSlope);
-        rateLimits.setRateLimitData(foreignController.LIMIT_USDC_TO_CCTP(),                           usdcMaxAmount, usdcSlope);
-        rateLimits.setRateLimitData(domainKeyEthereum,                                                usdcMaxAmount, usdcSlope);
-
-        rateLimits.setUnlimitedRateLimitData(RateLimitHelpers.makeAddressKey(withdrawKey, address(usdsBase)));
-        rateLimits.setUnlimitedRateLimitData(RateLimitHelpers.makeAddressKey(withdrawKey, address(susdsBase)));
+        Init.initAlmSystem(controllerInst, configAddresses, checkAddresses);
 
         vm.stopPrank();
     }
@@ -191,12 +83,20 @@ abstract contract ForkTestBase is Test {
         return 20782500;  // October 8, 2024
     }
 
+    function _absSubtraction(uint256 a, uint256 b) internal pure returns (uint256) {
+        return a > b ? a - b : b - a;
+    }
+
     function _setControllerEntered() internal {
         vm.store(address(foreignController), _REENTRANCY_GUARD_SLOT, _REENTRANCY_GUARD_ENTERED);
     }
 
     function _assertReentrancyGuardWrittenToTwice() internal {
-        ( , bytes32[] memory writeSlots ) = vm.accesses(address(foreignController));
+        _assertReentrancyGuardWrittenToTwice(address(foreignController));
+    }
+
+    function _assertReentrancyGuardWrittenToTwice(address controller) internal {
+        ( , bytes32[] memory writeSlots ) = vm.accesses(controller);
 
         uint256 count = 0;
 
@@ -207,7 +107,7 @@ abstract contract ForkTestBase is Test {
         }
 
         assertEq(count, 2);
-        assertEq(vm.load(address(foreignController), _REENTRANCY_GUARD_SLOT), _REENTRANCY_GUARD_NOT_ENTERED);
+        assertEq(vm.load(controller, _REENTRANCY_GUARD_SLOT), _REENTRANCY_GUARD_NOT_ENTERED);
     }
 
 }

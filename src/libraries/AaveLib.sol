@@ -38,8 +38,16 @@ interface IPoolLike {
 
 library AaveLib {
 
+    /**********************************************************************************************/
+    /*** Constants                                                                              ***/
+    /**********************************************************************************************/
+
     bytes32 public constant LIMIT_DEPOSIT  = keccak256("LIMIT_AAVE_DEPOSIT");
     bytes32 public constant LIMIT_WITHDRAW = keccak256("LIMIT_AAVE_WITHDRAW");
+
+    /**********************************************************************************************/
+    /*** External interactive functions                                                         ***/
+    /**********************************************************************************************/
 
     function deposit(
         address proxy,
@@ -95,6 +103,10 @@ library AaveLib {
         _decreaseRateLimit(rateLimits, LIMIT_WITHDRAW, aToken, amountWithdrawn);
         _increaseRateLimit(rateLimits, LIMIT_DEPOSIT,  aToken, amountWithdrawn);
     }
+
+    /**********************************************************************************************/
+    /*** Internal interactive functions                                                         ***/
+    /**********************************************************************************************/
 
     function _decreaseRateLimit(address rateLimits, bytes32 key, address aToken, uint256 amount)
         internal

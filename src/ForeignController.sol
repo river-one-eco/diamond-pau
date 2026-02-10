@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.21;
 
-import { AccessControlEnumerable } from "../lib/openzeppelin-contracts/contracts/access/extensions/AccessControlEnumerable.sol";
-import { ReentrancyGuard }         from "../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+import {
+    AccessControlEnumerable
+} from "../lib/openzeppelin-contracts/contracts/access/extensions/AccessControlEnumerable.sol";
+
+import { ReentrancyGuard } from "../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
 import { AaveLib }          from "./libraries/AaveLib.sol";
 import { CCTPLib }          from "./libraries/CCTPLib.sol";
@@ -11,9 +14,6 @@ import { LayerZeroLib }     from "./libraries/LayerZeroLib.sol";
 import { PSM3Lib }          from "./libraries/PSM3Lib.sol";
 import { SparkVaultLib }    from "./libraries/SparkVaultLib.sol";
 import { TransferAssetLib } from "./libraries/TransferAssetLib.sol";
-
-import { IALMProxy }   from "./interfaces/IALMProxy.sol";
-import { IRateLimits } from "./interfaces/IRateLimits.sol";
 
 contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
 
@@ -26,11 +26,15 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
     event RelayerRemoved(address indexed relayer);
 
     /**********************************************************************************************/
-    /*** State variables                                                                        ***/
+    /*** Roles                                                                                  ***/
     /**********************************************************************************************/
 
     bytes32 public constant FREEZER = keccak256("FREEZER");
     bytes32 public constant RELAYER = keccak256("RELAYER");
+
+    /**********************************************************************************************/
+    /*** Rate Limits Keys                                                                       ***/
+    /**********************************************************************************************/
 
     bytes32 public constant LIMIT_4626_DEPOSIT       = ERC4626Lib.LIMIT_DEPOSIT;
     bytes32 public constant LIMIT_4626_WITHDRAW      = ERC4626Lib.LIMIT_WITHDRAW;
@@ -44,12 +48,21 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
     bytes32 public constant LIMIT_USDC_TO_CCTP       = CCTPLib.LIMIT_TO_CCTP;
     bytes32 public constant LIMIT_USDC_TO_DOMAIN     = CCTPLib.LIMIT_TO_DOMAIN;
 
-    IALMProxy   public immutable proxy;
-    address     public immutable cctp;
-    address     public immutable psm;
-    IRateLimits public immutable rateLimits;
+    /**********************************************************************************************/
+    /*** Controller State Variables                                                             ***/
+    /**********************************************************************************************/
 
-    address public immutable usdc;
+    address public immutable proxy;
+    address public immutable rateLimits;
+
+    /**********************************************************************************************/
+    /*** Integration-Specific State Variables                                                   ***/
+    /**********************************************************************************************/
+
+    address public psm3;
+
+    address public cctpTokenMessenger;
+    address public cctpUSDC;
 
     mapping(address pool => uint256 maxSlippage) public maxSlippages;  // 1e18 precision
 
@@ -63,21 +76,11 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
     /*** Initialization                                                                         ***/
     /**********************************************************************************************/
 
-    constructor(
-        address admin_,
-        address proxy_,
-        address rateLimits_,
-        address psm_,
-        address usdc_,
-        address cctp_
-    ) {
+    constructor(address admin_, address proxy_, address rateLimits_) {
         _grantRole(DEFAULT_ADMIN_ROLE, admin_);
 
-        proxy      = IALMProxy(proxy_);
-        rateLimits = IRateLimits(rateLimits_);
-        psm        = psm_;
-        usdc       = usdc_;
-        cctp       = cctp_;
+        proxy      = proxy_;
+        rateLimits = rateLimits_;
     }
 
     /**********************************************************************************************/
@@ -119,6 +122,18 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
         ERC4626Lib.setMaxExchangeRate(maxExchangeRates, token, shares, maxExpectedAssets);
     }
 
+    function setPSM3(address psm) external {
+        psm3 = psm;
+    }
+
+    function setCCTPTokenMessenger(address messenger) external {
+        cctpTokenMessenger = messenger;
+    }
+
+    function setCCTPUSDC(address usdc) external {
+        cctpUSDC = usdc;
+    }
+
     /**********************************************************************************************/
     /*** Freezer functions                                                                      ***/
     /**********************************************************************************************/
@@ -137,7 +152,7 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
         nonReentrant
         onlyRole(RELAYER)
     {
-        TransferAssetLib.transfer(address(proxy), address(rateLimits), asset, destination, amount);
+        TransferAssetLib.transfer(proxy, rateLimits, asset, destination, amount);
     }
 
     /**********************************************************************************************/
@@ -150,7 +165,7 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
         onlyRole(RELAYER)
         returns (uint256 shares)
     {
-        return PSM3Lib.deposit(address(proxy), address(rateLimits), psm, asset, amount);
+        return PSM3Lib.deposit(proxy, rateLimits, psm3, asset, amount);
     }
 
     function withdrawPSM(address asset, uint256 maxAmount)
@@ -159,7 +174,7 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
         onlyRole(RELAYER)
         returns (uint256 assetsWithdrawn)
     {
-        return PSM3Lib.withdraw(address(proxy), address(rateLimits), psm, asset, maxAmount);
+        return PSM3Lib.withdraw(proxy, rateLimits, psm3, asset, maxAmount);
     }
 
     /**********************************************************************************************/
@@ -172,15 +187,19 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
         onlyRole(RELAYER)
     {
         CCTPLib.transfer({
-            proxy             : address(proxy),
-            rateLimits        : address(rateLimits),
-            cctp              : cctp,
-            usdc              : usdc,
+            proxy             : proxy,
+            rateLimits        : rateLimits,
+            cctp              : cctpTokenMessenger,
+            usdc              : cctpUSDC,
             destinationDomain : destinationDomain,
             usdcAmount        : usdcAmount,
             mintRecipients    : mintRecipients
         });
     }
+
+    /**********************************************************************************************/
+    /*** LayerZero functions                                                                    ***/
+    /**********************************************************************************************/
 
     // NOTE: !!! This function was deployed without integration testing !!!
     //       KEEP RATE LIMIT AT ZERO until LayerZero dependencies are live and
@@ -196,8 +215,8 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
         onlyRole(RELAYER)
     {
         LayerZeroLib.transfer({
-            proxy                 : address(proxy),
-            rateLimits            : address(rateLimits),
+            proxy                 : proxy,
+            rateLimits            : rateLimits,
             oftAddress            : oftAddress,
             amount                : amount,
             destinationEndpointId : destinationEndpointId,
@@ -215,14 +234,7 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
         onlyRole(RELAYER)
         returns (uint256 shares)
     {
-        return ERC4626Lib.deposit({
-            proxy            : address(proxy),
-            rateLimits       : address(rateLimits),
-            token            : token,
-            amount           : amount,
-            minSharesOut     : minSharesOut,
-            maxExchangeRates : maxExchangeRates
-        });
+        return ERC4626Lib.deposit(proxy, rateLimits, token, amount, minSharesOut, maxExchangeRates);
     }
 
     function withdrawERC4626(address token, uint256 amount, uint256 maxSharesIn)
@@ -231,7 +243,7 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
         onlyRole(RELAYER)
         returns (uint256 shares)
     {
-        return ERC4626Lib.withdraw(address(proxy), address(rateLimits), token, amount, maxSharesIn);
+        return ERC4626Lib.withdraw(proxy, rateLimits, token, amount, maxSharesIn);
     }
 
     function redeemERC4626(address token, uint256 shares, uint256 minAssetsOut)
@@ -240,7 +252,7 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
         onlyRole(RELAYER)
         returns (uint256 assets)
     {
-        return ERC4626Lib.redeem(address(proxy), address(rateLimits), token, shares, minAssetsOut);
+        return ERC4626Lib.redeem(proxy, rateLimits, token, shares, minAssetsOut);
     }
 
     function EXCHANGE_RATE_PRECISION() external pure returns (uint256) {
@@ -252,7 +264,7 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
     /**********************************************************************************************/
 
     function depositAave(address aToken, uint256 amount) external nonReentrant onlyRole(RELAYER) {
-        AaveLib.deposit(address(proxy), address(rateLimits), aToken, amount, maxSlippages);
+        AaveLib.deposit(proxy, rateLimits, aToken, amount, maxSlippages);
     }
 
     function withdrawAave(address aToken, uint256 amount)
@@ -261,7 +273,7 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
         onlyRole(RELAYER)
         returns (uint256 amountWithdrawn)
     {
-        return AaveLib.withdraw(address(proxy), address(rateLimits), aToken, amount);
+        return AaveLib.withdraw(proxy, rateLimits, aToken, amount);
     }
 
     /**********************************************************************************************/
@@ -273,7 +285,7 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
         nonReentrant
         onlyRole(RELAYER)
     {
-        SparkVaultLib.take(address(proxy), address(rateLimits), sparkVault, assetAmount);
+        SparkVaultLib.take(proxy, rateLimits, sparkVault, assetAmount);
     }
 
 }

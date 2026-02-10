@@ -215,7 +215,7 @@ contract Mainnet_StagingDeployment_Tests is StagingDeployment_TestBase {
         assertEq(usdc.balanceOf(address(almProxy)), startingBalance + 10e6);
     }
 
-    function test_depositAndWithdrawUsdsFromSUsds() public {
+    function test_depositAndWithdrawUSDSFromSUSDS() public {
         vm.skip(true);
 
         uint256 startingBalance = usds.balanceOf(address(almProxy));
@@ -232,7 +232,7 @@ contract Mainnet_StagingDeployment_Tests is StagingDeployment_TestBase {
         assertGe(IERC4626(Ethereum.SUSDS).balanceOf(address(almProxy)), 0);  // Interest earned
     }
 
-    function test_depositAndRedeemUsdsFromSUsds() public {
+    function test_depositAndRedeemUSDSFromSUSDS() public {
         vm.skip(true);
 
         uint256 startingBalance = usds.balanceOf(address(almProxy));
@@ -255,7 +255,7 @@ contract Mainnet_StagingDeployment_Tests is StagingDeployment_TestBase {
         assertEq(IERC4626(Ethereum.SUSDS).balanceOf(address(almProxy)), 0);
     }
 
-    function test_depositAndWithdrawUsdsFromAave() public {
+    function test_depositAndWithdrawUSDSFromAave() public {
         uint256 startingBalance = usds.balanceOf(address(almProxy));
 
         vm.startPrank(relayerSafe);
@@ -268,7 +268,7 @@ contract Mainnet_StagingDeployment_Tests is StagingDeployment_TestBase {
         assertGe(usds.balanceOf(address(almProxy)), startingBalance + 10e6);  // Interest earned
     }
 
-    function test_depositAndWithdrawUsdcFromAave() public {
+    function test_depositAndWithdrawUSDCFromAave() public {
         uint256 startingBalance = usdc.balanceOf(address(almProxy));
 
         vm.startPrank(relayerSafe);
@@ -282,7 +282,7 @@ contract Mainnet_StagingDeployment_Tests is StagingDeployment_TestBase {
         assertGe(usdc.balanceOf(address(almProxy)), startingBalance + 10e6);  // Interest earned
     }
 
-    function test_mintDepositCooldownAssetsBurnUsde() public {
+    function test_mintDepositCooldownAssetsBurnUSDE() public {
         vm.skip(true);
 
         uint256 startingBalance = usdc.balanceOf(address(almProxy));
@@ -293,7 +293,7 @@ contract Mainnet_StagingDeployment_Tests is StagingDeployment_TestBase {
         mainnetController.prepareUSDEMint(10e6);
         vm.stopPrank();
 
-        _simulateUsdeMint(10e6);
+        _simulateUSDEMint(10e6);
 
         vm.startPrank(relayerSafe);
         mainnetController.depositERC4626(Ethereum.SUSDE, 10e18, 0);
@@ -304,14 +304,14 @@ contract Mainnet_StagingDeployment_Tests is StagingDeployment_TestBase {
         mainnetController.prepareUSDEBurn(10e18 - 1);
         vm.stopPrank();
 
-        _simulateUsdeBurn(10e18 - 1);
+        _simulateUSDEBurn(10e18 - 1);
 
         assertEq(usdc.balanceOf(address(almProxy)), startingBalance + 10e6 - 1);  // Rounding not captured
 
         assertGe(IERC4626(Ethereum.SUSDE).balanceOf(address(almProxy)), 0);  // Interest earned
     }
 
-    function test_mintDepositCooldownSharesBurnUsde() public {
+    function test_mintDepositCooldownSharesBurnUSDE() public {
         vm.skip(true);
 
         vm.startPrank(relayerSafe);
@@ -322,7 +322,7 @@ contract Mainnet_StagingDeployment_Tests is StagingDeployment_TestBase {
 
         uint256 startingBalance = usdc.balanceOf(address(almProxy));
 
-        _simulateUsdeMint(10e6);
+        _simulateUSDEMint(10e6);
 
         vm.startPrank(relayerSafe);
         mainnetController.depositERC4626(Ethereum.SUSDE, 10e18, 0);
@@ -338,14 +338,14 @@ contract Mainnet_StagingDeployment_Tests is StagingDeployment_TestBase {
 
         vm.stopPrank();
 
-        _simulateUsdeBurn(burnAmount);
+        _simulateUSDEBurn(burnAmount);
 
         assertGe(usdc.balanceOf(address(almProxy)), startingBalance - 1);  // Interest earned (rounding)
 
         assertEq(IERC4626(Ethereum.SUSDE).balanceOf(address(almProxy)), 0);
     }
 
-    function test_mintDepositWithdrawSyrupUsdc() public {
+    function test_mintDepositWithdrawSyrupUSDC() public {
         vm.skip(true);
 
         // --- Maple onboarding process ---
@@ -353,9 +353,9 @@ contract Mainnet_StagingDeployment_Tests is StagingDeployment_TestBase {
         IPermissionManagerLike permissionManager
             = IPermissionManagerLike(0xBe10aDcE8B6E3E02Db384E7FaDA5395DD113D8b3);
 
-        IMapleTokenExtended syrupUsdc = IMapleTokenExtended(Ethereum.SYRUP_USDC);
+        IMapleTokenExtended syrupUSDC = IMapleTokenExtended(Ethereum.SYRUP_USDC);
 
-        address poolManager = syrupUsdc.manager();
+        address poolManager = syrupUSDC.manager();
 
         address[] memory lenders  = new address[](1);
         bool[]    memory booleans = new bool[](1);
@@ -458,7 +458,7 @@ contract Mainnet_StagingDeployment_Tests is StagingDeployment_TestBase {
 
     // TODO: Try doing ethena minting with EIP-712 signatures (vm.sign)
 
-    function _simulateUsdeMint(uint256 amount) internal {
+    function _simulateUSDEMint(uint256 amount) internal {
         vm.prank(Ethereum.ETHENA_MINTER);
         usdc.transferFrom(address(almProxy), Ethereum.ETHENA_MINTER, amount);
         deal(
@@ -468,7 +468,7 @@ contract Mainnet_StagingDeployment_Tests is StagingDeployment_TestBase {
         );
     }
 
-    function _simulateUsdeBurn(uint256 amount) internal {
+    function _simulateUSDEBurn(uint256 amount) internal {
         vm.prank(Ethereum.ETHENA_MINTER);
         IERC20(Ethereum.USDE).transferFrom(address(almProxy), Ethereum.ETHENA_MINTER, amount);
         deal(address(usdc), address(almProxy), usdc.balanceOf(address(almProxy)) + amount / 1e12);
@@ -591,7 +591,7 @@ contract Base_StagingDeployment_Tests is StagingDeployment_TestBase {
         vm.stopPrank();
     }
 
-    function test_depositWithdrawFundsFromBaseMorphoUsdc() public {
+    function test_depositWithdrawFundsFromBaseMorphoUSDC() public {
         vm.skip(true);
 
         mainnet.selectFork();
@@ -626,7 +626,7 @@ contract Base_StagingDeployment_Tests is StagingDeployment_TestBase {
         vm.stopPrank();
     }
 
-    function test_depositRedeemFundsFromBaseMorphoUsdc() public {
+    function test_depositRedeemFundsFromBaseMorphoUSDC() public {
         vm.skip(true);
 
         mainnet.selectFork();

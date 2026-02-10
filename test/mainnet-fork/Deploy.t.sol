@@ -6,82 +6,46 @@ import { Ethereum } from "../../lib/spark-address-registry/src/Ethereum.sol";
 import { ControllerInstance }      from "../../deploy/ControllerInstance.sol";
 import { MainnetControllerDeploy } from "../../deploy/ControllerDeploy.sol";
 
-import { ALMProxy }          from "../../src/ALMProxy.sol";
+import { IALMProxy }   from "../../src/interfaces/IALMProxy.sol";
+import { IRateLimits } from "../../src/interfaces/IRateLimits.sol";
+
 import { MainnetController } from "../../src/MainnetController.sol";
-import { RateLimits }        from "../../src/RateLimits.sol";
 
 import { ForkTestBase } from "./ForkTestBase.t.sol";
 
-contract MainnetController_Deploy_SuccessTests is ForkTestBase {
+contract MainnetController_Deploy_Tests is ForkTestBase {
 
     function test_deployFull() external {
         // Perform new deployments against existing fork environment
 
-        ControllerInstance memory controllerInst = MainnetControllerDeploy.deployFull({
-            admin   : SPARK_PROXY,
-            vault   : vault,
-            psm     : Ethereum.PSM,
-            daiUsds : DAI_USDS,
-            cctp    : CCTP_MESSENGER
-        });
+        ControllerInstance memory controllerInst = MainnetControllerDeploy.deployFull(Ethereum.SPARK_PROXY);
 
-        ALMProxy          newAlmProxy   = ALMProxy(payable(controllerInst.almProxy));
-        MainnetController newController = MainnetController(controllerInst.controller);
-        RateLimits        newRateLimits = RateLimits(controllerInst.rateLimits);
+        assertEq(IALMProxy(controllerInst.almProxy).hasRole(DEFAULT_ADMIN_ROLE, Ethereum.SPARK_PROXY),   true);
+        assertEq(IALMProxy(controllerInst.almProxy).hasRole(DEFAULT_ADMIN_ROLE, address(this)), false);  // Deployer never gets admin
 
-        assertEq(newAlmProxy.hasRole(DEFAULT_ADMIN_ROLE, SPARK_PROXY),   true);
-        assertEq(newAlmProxy.hasRole(DEFAULT_ADMIN_ROLE, address(this)), false);  // Deployer never gets admin
+        assertEq(IRateLimits(controllerInst.rateLimits).hasRole(DEFAULT_ADMIN_ROLE, Ethereum.SPARK_PROXY),   true);
+        assertEq(IRateLimits(controllerInst.rateLimits).hasRole(DEFAULT_ADMIN_ROLE, address(this)), false);  // Deployer never gets admin
 
-        assertEq(newRateLimits.hasRole(DEFAULT_ADMIN_ROLE, SPARK_PROXY),   true);
-        assertEq(newRateLimits.hasRole(DEFAULT_ADMIN_ROLE, address(this)), false);  // Deployer never gets admin
-
-        _assertControllerInitState(newController, address(newAlmProxy), address(newRateLimits), vault, buffer);
+        _assertControllerInitState(controllerInst.controller, controllerInst.almProxy, controllerInst.rateLimits);
     }
 
     function test_deployController() external {
         // Perform new deployments against existing fork environment
 
-        MainnetController newController = MainnetController(MainnetControllerDeploy.deployController({
-            admin      : SPARK_PROXY,
-            almProxy   : address(almProxy),
-            rateLimits : address(rateLimits),
-            vault      : vault,
-            psm        : Ethereum.PSM,
-            daiUsds    : DAI_USDS,
-            cctp       : CCTP_MESSENGER
-        }));
+        address newController = MainnetControllerDeploy.deployController(Ethereum.SPARK_PROXY, almProxy, address(rateLimits));
 
-        _assertControllerInitState(newController, address(almProxy), address(rateLimits), vault, buffer);
+        _assertControllerInitState(newController, almProxy, address(rateLimits));
     }
 
-    function _assertControllerInitState(
-        MainnetController controller,
-        address           almProxy,
-        address           rateLimits,
-        address           vault,
-        address           buffer
-    )
+    function _assertControllerInitState(address controller, address almProxy, address rateLimits)
         internal
         view
     {
-        assertEq(controller.hasRole(DEFAULT_ADMIN_ROLE, SPARK_PROXY),   true);
-        assertEq(controller.hasRole(DEFAULT_ADMIN_ROLE, address(this)), false);
+        assertEq(MainnetController(controller).hasRole(DEFAULT_ADMIN_ROLE, Ethereum.SPARK_PROXY), true);
+        assertEq(MainnetController(controller).hasRole(DEFAULT_ADMIN_ROLE, address(this)),        false); // Deployer never gets admin
 
-        assertEq(address(controller.proxy()),        almProxy);
-        assertEq(address(controller.rateLimits()),   rateLimits);
-        assertEq(address(controller.vault()),        vault);
-        assertEq(address(controller.buffer()),       buffer);
-        assertEq(address(controller.psm()),          Ethereum.PSM);
-        assertEq(address(controller.daiUsds()),      Ethereum.DAI_USDS);
-        assertEq(address(controller.cctp()),         Ethereum.CCTP_TOKEN_MESSENGER);
-        assertEq(address(controller.ethenaMinter()), Ethereum.ETHENA_MINTER);
-        assertEq(address(controller.susde()),        Ethereum.SUSDE);
-        assertEq(address(controller.dai()),          Ethereum.DAI);
-        assertEq(address(controller.usdc()),         Ethereum.USDC);
-        assertEq(address(controller.usds()),         Ethereum.USDS);
-        assertEq(address(controller.usde()),         Ethereum.USDE);
-
-        assertEq(controller.psmTo18ConversionFactor(), 1e12);
+        assertEq(MainnetController(controller).proxy(),      almProxy);
+        assertEq(MainnetController(controller).rateLimits(), rateLimits);
     }
 
 }

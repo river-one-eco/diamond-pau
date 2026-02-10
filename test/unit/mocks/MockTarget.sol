@@ -5,10 +5,10 @@ contract MockTarget {
 
     event ExampleEvent(
         address indexed exampleAddress,
-        uint256 exampleValue,
-        uint256 exampleReturn,
-        address caller,
-        uint256 value
+        uint256         exampleValue,
+        uint256         exampleReturn,
+        address         caller,
+        uint256         value
     );
 
     function exampleCall(address exampleAddress, uint256 exampleValue)

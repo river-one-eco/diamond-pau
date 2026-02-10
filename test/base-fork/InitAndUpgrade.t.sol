@@ -1,14 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.21;
 
-import { ERC20Mock } from "../../lib/openzeppelin-contracts/contracts/mocks/token/ERC20Mock.sol";
-
 import { Base } from "../../lib/spark-address-registry/src/Base.sol";
-
-import { PSM3Deploy } from "../../lib/spark-psm/deploy/PSM3Deploy.sol";
-import { IPSM3 }      from "../../lib/spark-psm/src/PSM3.sol";
-
-import { CCTPForwarder } from "../../lib/xchain-helpers/src/forwarders/CCTPForwarder.sol";
 
 import { ControllerInstance }            from "../../deploy/ControllerInstance.sol";
 import { ForeignControllerDeploy }       from "../../deploy/ControllerDeploy.sol";
@@ -24,110 +17,63 @@ import { ForkTestBase } from "./ForkTestBase.t.sol";
 contract LibraryWrapper {
 
     function initAlmSystem(
-        ControllerInstance        memory controllerInst,
-        Init.ConfigAddressParams  memory configAddresses,
-        Init.CheckAddressParams   memory checkAddresses,
-        Init.MintRecipient[]      memory mintRecipients,
-        Init.LayerZeroRecipient[] memory layerZeroRecipients,
-        Init.MaxSlippageParams[]  memory maxSlippageParams,
-        bool                      checkPsm
+        ControllerInstance       memory controllerInst,
+        Init.ConfigAddressParams memory configAddresses,
+        Init.CheckAddressParams  memory checkAddresses
     )
         external
     {
-        Init.initAlmSystem(controllerInst, configAddresses, checkAddresses, mintRecipients, layerZeroRecipients, maxSlippageParams, checkPsm);
+        Init.initAlmSystem(controllerInst, configAddresses, checkAddresses);
     }
 
     function upgradeController(
-        ControllerInstance        memory controllerInst,
-        Init.ConfigAddressParams  memory configAddresses,
-        Init.CheckAddressParams   memory checkAddresses,
-        Init.MintRecipient[]      memory mintRecipients,
-        Init.LayerZeroRecipient[] memory layerZeroRecipients,
-        Init.MaxSlippageParams[]  memory maxSlippageParams,
-        bool                      checkPsm
+        ControllerInstance       memory controllerInst,
+        Init.ConfigAddressParams memory configAddresses,
+        Init.CheckAddressParams  memory checkAddresses
     )
         external
     {
-        Init.upgradeController(controllerInst, configAddresses, checkAddresses, mintRecipients, layerZeroRecipients, maxSlippageParams, checkPsm);
+        Init.upgradeController(controllerInst, configAddresses, checkAddresses);
     }
 
 }
 
 abstract contract InitAndUpgrade_TestBase is ForkTestBase {
 
-    uint32 constant destinationEndpointId = 30101;  // Ethereum EID
+    uint32 internal constant destinationEndpointId = 30101;  // Ethereum EID
 
     function _getDefaultParams()
         internal
         returns (
-            Init.ConfigAddressParams  memory configAddresses,
-            Init.CheckAddressParams   memory checkAddresses,
-            Init.MintRecipient[]      memory mintRecipients,
-            Init.LayerZeroRecipient[] memory layerZeroRecipients,
-            Init.MaxSlippageParams[]  memory maxSlippageParams
+            Init.ConfigAddressParams memory configAddresses,
+            Init.CheckAddressParams  memory checkAddresses
         )
     {
         address[] memory relayers = new address[](1);
-        relayers[0] = relayer;
+        relayers[0] = RELAYER;
 
-        configAddresses = Init.ConfigAddressParams({
-            freezer       : freezer,
-            relayers      : relayers,
-            oldController : address(0)
-        });
-
-        checkAddresses = Init.CheckAddressParams({
-            admin : Base.SPARK_EXECUTOR,
-            psm   : address(psmBase),
-            cctp  : Base.CCTP_TOKEN_MESSENGER,
-            usdc  : address(usdcBase),
-            susds : address(susdsBase),
-            usds  : address(usdsBase)
-        });
-
-        mintRecipients = new Init.MintRecipient[](1);
-
-        mintRecipients[0] = Init.MintRecipient({
-            domain        : CCTPForwarder.DOMAIN_ID_CIRCLE_ETHEREUM,
-            mintRecipient : bytes32(uint256(uint160(makeAddr("ethereumAlmProxy"))))
-        });
-
-        layerZeroRecipients = new Init.LayerZeroRecipient[](1);
-
-        layerZeroRecipients[0] = Init.LayerZeroRecipient({
-            destinationEndpointId : destinationEndpointId,
-            recipient             : bytes32(uint256(uint160(makeAddr("ethereumAlmProxy"))))
-        });
-
-        maxSlippageParams = new Init.MaxSlippageParams[](1);
-
-        maxSlippageParams[0] = Init.MaxSlippageParams({
-            pool        : makeAddr("pool"),
-            maxSlippage : 0.99e18
-        });
+        configAddresses = Init.ConfigAddressParams(FREEZER, relayers, address(0));
+        checkAddresses  = Init.CheckAddressParams(Base.SPARK_EXECUTOR, almProxy, address(rateLimits));
     }
 
 }
 
-contract ForeignController_InitAndUpgrade_FailureTests is InitAndUpgrade_TestBase {
+contract ForeignController_InitAndUpgrade_Tests is InitAndUpgrade_TestBase {
 
     // NOTE: `initAlmSystem` and `upgradeController` are tested in the same contract because
     //       they both use _initController and have similar specific setups, so it
     //       less complex/repetitive to test them together.
 
-    LibraryWrapper wrapper;
+    LibraryWrapper internal wrapper;
 
-    ControllerInstance public controllerInst;
+    ControllerInstance internal controllerInst;
 
-    address public mismatchAddress = makeAddr("mismatchAddress");
+    address internal mismatchAddress = makeAddr("mismatchAddress");
 
-    address public oldController;
+    address internal oldController;
 
-    Init.ConfigAddressParams  configAddresses;
-    Init.CheckAddressParams   checkAddresses;
-    Init.MintRecipient[]      mintRecipients;
-    Init.LayerZeroRecipient[] layerZeroRecipients;
-    Init.MaxSlippageParams[]  maxSlippageParams;
+    Init.ConfigAddressParams internal configAddresses;
+    Init.CheckAddressParams  internal checkAddresses;
 
     function setUp() public override {
         super.setUp();
@@ -137,27 +83,13 @@ contract ForeignController_InitAndUpgrade_FailureTests is InitAndUpgrade_TestBas
         // Deploy new controller against existing system
         // NOTE: initAlmSystem will redundantly call rely and approve on already inited
         //       almProxy and rateLimits, this setup was chosen to easily test upgrade and init failures
-        foreignController = ForeignController(ForeignControllerDeploy.deployController({
-            admin      : Base.SPARK_EXECUTOR,
-            almProxy   : address(almProxy),
-            rateLimits : address(rateLimits),
-            psm        : address(psmBase),
-            usdc       : address(usdcBase),
-            cctp       : Base.CCTP_TOKEN_MESSENGER
-        }));
+        foreignController = ForeignController(
+            ForeignControllerDeploy.deployController(Base.SPARK_EXECUTOR, almProxy, address(rateLimits))
+        );
 
-        Init.MintRecipient[] memory mintRecipients_ = new Init.MintRecipient[](1);
+        ( configAddresses, checkAddresses ) = _getDefaultParams();
 
-        ( configAddresses, checkAddresses, mintRecipients_, , ) = _getDefaultParams();
-
-        // NOTE: This would need to be refactored to a for loop if more than one recipient
-        mintRecipients.push(mintRecipients_[0]);
-
-        controllerInst = ControllerInstance({
-            almProxy   : address(almProxy),
-            controller : address(foreignController),
-            rateLimits : address(rateLimits)
-        });
+        controllerInst = ControllerInstance(almProxy, address(foreignController), address(rateLimits));
 
         // Admin will be calling the library from its own address
         vm.etch(Base.SPARK_EXECUTOR, address(new LibraryWrapper()).code);
@@ -175,18 +107,10 @@ contract ForeignController_InitAndUpgrade_FailureTests is InitAndUpgrade_TestBas
 
     function test_initAlmSystem_upgradeController_incorrectAdminAlmProxy() external {
         vm.prank(Base.SPARK_EXECUTOR);
-        almProxy.revokeRole(DEFAULT_ADMIN_ROLE, Base.SPARK_EXECUTOR);
+        ALMProxy(almProxy).revokeRole(DEFAULT_ADMIN_ROLE, Base.SPARK_EXECUTOR);
 
         vm.expectRevert("ForeignControllerInit/incorrect-admin-almProxy");
-        wrapper.initAlmSystem(
-            controllerInst,
-            configAddresses,
-            checkAddresses,
-            mintRecipients,
-            layerZeroRecipients,
-            maxSlippageParams,
-            true
-        );
+        wrapper.initAlmSystem(controllerInst, configAddresses, checkAddresses);
     }
 
     function test_initAlmSystem_upgradeController_incorrectAdminRateLimits() external {
@@ -194,15 +118,7 @@ contract ForeignController_InitAndUpgrade_FailureTests is InitAndUpgrade_TestBas
         rateLimits.revokeRole(DEFAULT_ADMIN_ROLE, Base.SPARK_EXECUTOR);
 
         vm.expectRevert("ForeignControllerInit/incorrect-admin-rateLimits");
-        wrapper.initAlmSystem(
-            controllerInst,
-            configAddresses,
-            checkAddresses,
-            mintRecipients,
-            layerZeroRecipients,
-            maxSlippageParams,
-            true
-        );
+        wrapper.initAlmSystem(controllerInst, configAddresses, checkAddresses);
     }
 
     function test_initAlmSystem_upgradeController_incorrectAdminController() external {
@@ -230,139 +146,9 @@ contract ForeignController_InitAndUpgrade_FailureTests is InitAndUpgrade_TestBas
         _checkInitAndUpgradeFail(abi.encodePacked("ForeignControllerInit/incorrect-rateLimits"));
     }
 
-    function test_initAlmSystem_upgradeController_incorrectPsm() external {
-        checkAddresses.psm = mismatchAddress;
-        _checkInitAndUpgradeFail(abi.encodePacked("ForeignControllerInit/incorrect-psm"));
-    }
-
-    function test_initAlmSystem_upgradeController_incorrectUsdc() external {
-        checkAddresses.usdc = mismatchAddress;
-        _checkInitAndUpgradeFail(abi.encodePacked("ForeignControllerInit/incorrect-usdc"));
-    }
-
-    function test_initAlmSystem_upgradeController_incorrectCctp() external {
-        checkAddresses.cctp = mismatchAddress;
-        _checkInitAndUpgradeFail(abi.encodePacked("ForeignControllerInit/incorrect-cctp"));
-    }
-
     function test_initAlmSystem_upgradeController_oldControllerIsNewController() external {
         configAddresses.oldController = controllerInst.controller;
         _checkInitAndUpgradeFail(abi.encodePacked("ForeignControllerInit/old-controller-is-new-controller"));
-    }
-
-    /**********************************************************************************************/
-    /*** PSM tests                                                                              ***/
-    /**********************************************************************************************/
-
-    function test_initAlmSystem_upgradeController_totalAssetsNotSeededBoundary() external {
-        // Remove one wei from PSM to make seeded condition not met
-        vm.prank(address(0));
-        psmBase.withdraw(address(usdsBase), address(this), 1);  // Withdraw one wei from PSM
-
-        assertEq(psmBase.totalAssets(), 1e18 - 1);
-
-        _checkInitAndUpgradeFail(abi.encodePacked("ForeignControllerInit/psm-totalAssets-not-seeded"));
-
-        // Approve from address(this) cause it received the one wei
-        // Redo the seeding
-        usdsBase.approve(address(psmBase), 1);
-        psmBase.deposit(address(usdsBase), address(0), 1);
-
-        assertEq(psmBase.totalAssets(), 1e18);
-
-        _checkInitAndUpgradeSucceed();
-    }
-
-    function test_initAlmSystem_upgradeController_totalSharesNotSeededBoundary() external {
-        // Remove one wei from PSM to make seeded condition not met
-        vm.prank(address(0));
-        psmBase.withdraw(address(usdsBase), address(this), 1);  // Withdraw one wei from PSM
-
-        usdsBase.transfer(address(psmBase), 1);  // Transfer one wei to PSM to update totalAssets
-
-        assertEq(psmBase.totalAssets(), 1e18);
-        assertEq(psmBase.totalShares(), 1e18 - 1);
-
-        _checkInitAndUpgradeFail(abi.encodePacked("ForeignControllerInit/psm-totalShares-not-seeded"));
-
-        // Do deposit to update shares, need to do 2 wei to get back to 1e18 because of rounding
-        deal(address(usdsBase), address(this), 2);
-        usdsBase.approve(address(psmBase), 2);
-        psmBase.deposit(address(usdsBase), address(0), 2);
-
-        assertEq(psmBase.totalAssets(), 1e18 + 2);
-        assertEq(psmBase.totalShares(), 1e18);
-
-        _checkInitAndUpgradeSucceed();
-    }
-
-    function test_initAlmSystem_upgradeController_incorrectPsmUsdc() external {
-        ERC20Mock wrongUsdc = new ERC20Mock();
-
-        deal(address(usdsBase), address(this), 1e18);  // For seeding PSM during deployment
-
-        // Deploy a new PSM with the wrong USDC
-        psmBase = IPSM3(PSM3Deploy.deploy(
-            SPARK_EXECUTOR, address(wrongUsdc), address(usdsBase), address(susdsBase), SSR_ORACLE
-        ));
-
-        // Deploy a new controller pointing to misconfigured PSM
-        controllerInst = ForeignControllerDeploy.deployFull(
-            SPARK_EXECUTOR,
-            address(psmBase),
-            Base.USDC,
-            CCTP_MESSENGER_BASE
-        );
-
-        checkAddresses.psm = address(psmBase);  // Overwrite to point to misconfigured PSM
-
-        _checkInitAndUpgradeFail(abi.encodePacked("ForeignControllerInit/psm-incorrect-usdc"));
-    }
-
-    function test_initAlmSystem_upgradeController_incorrectPsmUsds() external {
-        ERC20Mock wrongUsds = new ERC20Mock();
-
-        deal(address(wrongUsds), address(this), 1e18);  // For seeding PSM during deployment
-
-        // Deploy a new PSM with the wrong USDS
-        psmBase = IPSM3(PSM3Deploy.deploy(
-            SPARK_EXECUTOR, Base.USDC, address(wrongUsds), address(susdsBase), SSR_ORACLE
-        ));
-
-        // Deploy a new controller pointing to misconfigured PSM
-        controllerInst = ForeignControllerDeploy.deployFull(
-            SPARK_EXECUTOR,
-            address(psmBase),
-            Base.USDC,
-            CCTP_MESSENGER_BASE
-        );
-
-        checkAddresses.psm = address(psmBase);  // Overwrite to point to misconfigured PSM
-
-        _checkInitAndUpgradeFail(abi.encodePacked("ForeignControllerInit/psm-incorrect-usds"));
-    }
-
-    function test_initAlmSystem_upgradeController_incorrectPsmSUsds() external {
-        ERC20Mock wrongSUsds = new ERC20Mock();
-
-        deal(address(usdsBase), address(this), 1e18);  // For seeding PSM during deployment
-
-        // Deploy a new PSM with the wrong SUSDS
-        psmBase = IPSM3(PSM3Deploy.deploy(
-            SPARK_EXECUTOR, Base.USDC, address(usdsBase), address(wrongSUsds), SSR_ORACLE
-        ));
-
-        // Deploy a new controller pointing to misconfigured PSM
-        controllerInst = ForeignControllerDeploy.deployFull(
-            SPARK_EXECUTOR,
-            address(psmBase),
-            Base.USDC,
-            CCTP_MESSENGER_BASE
-        );
-
-        checkAddresses.psm = address(psmBase);  // Overwrite to point to misconfigured PSM
-
-        _checkInitAndUpgradeFail(abi.encodePacked("ForeignControllerInit/psm-incorrect-susds"));
     }
 
     /**********************************************************************************************/
@@ -373,15 +159,7 @@ contract ForeignController_InitAndUpgrade_FailureTests is InitAndUpgrade_TestBas
         configAddresses.oldController = address(0);
 
         vm.expectRevert("ForeignControllerInit/old-controller-zero-address");
-        wrapper.upgradeController(
-            controllerInst,
-            configAddresses,
-            checkAddresses,
-            mintRecipients,
-            layerZeroRecipients,
-            maxSlippageParams,
-            true
-        );
+        wrapper.upgradeController(controllerInst, configAddresses, checkAddresses);
     }
 
     function test_upgradeController_oldControllerDoesNotHaveRoleInAlmProxy() external {
@@ -389,20 +167,12 @@ contract ForeignController_InitAndUpgrade_FailureTests is InitAndUpgrade_TestBas
 
         // Revoke the old controller address in ALM proxy
         vm.startPrank(Base.SPARK_EXECUTOR);
-        almProxy.revokeRole(almProxy.CONTROLLER(), configAddresses.oldController);
+        ALMProxy(almProxy).revokeRole(CONTROLLER_ROLE, configAddresses.oldController);
         vm.stopPrank();
 
-        // Try to upgrade with the old controller address that is doesn't have the CONTROLLER role
+        // Try to upgrade with the old controller address that is doesn't have the CONTROLLER_ROLE role
         vm.expectRevert("ForeignControllerInit/old-controller-not-almProxy-controller");
-        wrapper.upgradeController(
-            controllerInst,
-            configAddresses,
-            checkAddresses,
-            mintRecipients,
-            layerZeroRecipients,
-            maxSlippageParams,
-            true
-        );
+        wrapper.upgradeController(controllerInst, configAddresses, checkAddresses);
     }
 
     function test_upgradeController_oldControllerDoesNotHaveRoleInRateLimits() external {
@@ -410,20 +180,12 @@ contract ForeignController_InitAndUpgrade_FailureTests is InitAndUpgrade_TestBas
 
         // Revoke the old controller address in rate limits
         vm.startPrank(Base.SPARK_EXECUTOR);
-        rateLimits.revokeRole(rateLimits.CONTROLLER(), configAddresses.oldController);
+        rateLimits.revokeRole(CONTROLLER_ROLE, configAddresses.oldController);
         vm.stopPrank();
 
-        // Try to upgrade with the old controller address that is doesn't have the CONTROLLER role
+        // Try to upgrade with the old controller address that is doesn't have the CONTROLLER_ROLE role
         vm.expectRevert("ForeignControllerInit/old-controller-not-rateLimits-controller");
-        wrapper.upgradeController(
-            controllerInst,
-            configAddresses,
-            checkAddresses,
-            mintRecipients,
-            layerZeroRecipients,
-            maxSlippageParams,
-            true
-        );
+        wrapper.upgradeController(controllerInst, configAddresses, checkAddresses);
     }
 
     /**********************************************************************************************/
@@ -432,96 +194,46 @@ contract ForeignController_InitAndUpgrade_FailureTests is InitAndUpgrade_TestBas
 
     function _checkInitAndUpgradeFail(bytes memory expectedError) internal {
         vm.expectRevert(expectedError);
-        wrapper.initAlmSystem(
-            controllerInst,
-            configAddresses,
-            checkAddresses,
-            mintRecipients,
-            layerZeroRecipients,
-            maxSlippageParams,
-            true
-        );
+        wrapper.initAlmSystem(controllerInst, configAddresses, checkAddresses);
 
         vm.expectRevert(expectedError);
-        wrapper.upgradeController(
-            controllerInst,
-            configAddresses,
-            checkAddresses,
-            mintRecipients,
-            layerZeroRecipients,
-            maxSlippageParams,
-            true
-        );
+        wrapper.upgradeController(controllerInst, configAddresses, checkAddresses);
     }
 
     function _checkInitAndUpgradeSucceed() internal {
         uint256 id = vm.snapshot();
 
-        wrapper.initAlmSystem(
-            controllerInst,
-            configAddresses,
-            checkAddresses,
-            mintRecipients,
-            layerZeroRecipients,
-            maxSlippageParams,
-            true
-        );
+        wrapper.initAlmSystem(controllerInst, configAddresses, checkAddresses);
 
         vm.revertTo(id);
 
         configAddresses.oldController = oldController;
 
-        wrapper.upgradeController(
-            controllerInst,
-            configAddresses,
-            checkAddresses,
-            mintRecipients,
-            layerZeroRecipients,
-            maxSlippageParams,
-            true
-        );
+        wrapper.upgradeController(controllerInst, configAddresses, checkAddresses);
     }
 
 }
 
-contract ForeignController_InitAlmSystem_SuccessTests is InitAndUpgrade_TestBase {
+contract ForeignController_InitAlmSystem_Tests is InitAndUpgrade_TestBase {
 
-    LibraryWrapper wrapper;
+    LibraryWrapper internal wrapper;
 
-    ControllerInstance public controllerInst;
+    ControllerInstance internal controllerInst;
 
-    Init.ConfigAddressParams  configAddresses;
-    Init.CheckAddressParams   checkAddresses;
-    Init.MintRecipient[]      mintRecipients;
-    Init.LayerZeroRecipient[] layerZeroRecipients;
-    Init.MaxSlippageParams[]  maxSlippageParams;
+    Init.ConfigAddressParams internal configAddresses;
+    Init.CheckAddressParams  internal checkAddresses;
 
     function setUp() public override {
         super.setUp();
 
-        controllerInst = ForeignControllerDeploy.deployFull(
-            Base.SPARK_EXECUTOR,
-            address(psmBase),
-            address(usdcBase),
-            Base.CCTP_TOKEN_MESSENGER
-        );
+        controllerInst = ForeignControllerDeploy.deployFull(Base.SPARK_EXECUTOR);
 
         // Overwrite storage for all previous deployments in setUp and assert brand new deployment
         foreignController = ForeignController(controllerInst.controller);
-        almProxy          = ALMProxy(payable(controllerInst.almProxy));
+        almProxy          = payable(controllerInst.almProxy);
         rateLimits        = RateLimits(controllerInst.rateLimits);
 
-        Init.MintRecipient[] memory mintRecipients_ = new Init.MintRecipient[](1);
-
-        Init.LayerZeroRecipient[] memory layerZeroRecipients_ = new Init.LayerZeroRecipient[](1);
-
-        Init.MaxSlippageParams[] memory maxSlippageParams_ = new Init.MaxSlippageParams[](1);
-
-        ( configAddresses, checkAddresses, mintRecipients_, layerZeroRecipients_, maxSlippageParams_ ) = _getDefaultParams();
-
-        mintRecipients.push(mintRecipients_[0]);
-        layerZeroRecipients.push(layerZeroRecipients_[0]);
-        maxSlippageParams.push(maxSlippageParams_[0]);
+        ( configAddresses, checkAddresses ) = _getDefaultParams();
 
         // Admin will be calling the library from its own address
         vm.etch(Base.SPARK_EXECUTOR, address(new LibraryWrapper()).code);
@@ -533,112 +245,46 @@ contract ForeignController_InitAlmSystem_SuccessTests is InitAndUpgrade_TestBase
         return 21430000;  // Dec 18, 2024
     }
 
-    function test_initAlmSystem() public {
-        assertEq(foreignController.hasRole(foreignController.FREEZER(), freezer), false);
-        assertEq(foreignController.hasRole(foreignController.RELAYER(), relayer), false);
+    function test_initAlmSystem() external {
+        assertEq(foreignController.hasRole(FREEZER_ROLE, FREEZER), false);
+        assertEq(foreignController.hasRole(RELAYER_ROLE, RELAYER), false);
 
-        assertEq(almProxy.hasRole(almProxy.CONTROLLER(), address(foreignController)),     false);
-        assertEq(rateLimits.hasRole(rateLimits.CONTROLLER(), address(foreignController)), false);
+        assertEq(ALMProxy(almProxy).hasRole(CONTROLLER_ROLE, address(foreignController)), false);
+        assertEq(rateLimits.hasRole(CONTROLLER_ROLE,         address(foreignController)), false);
 
-        assertEq(foreignController.mintRecipients(mintRecipients[0].domain),                bytes32(0));
-        assertEq(foreignController.mintRecipients(CCTPForwarder.DOMAIN_ID_CIRCLE_ETHEREUM), bytes32(0));
+        vm.prank(Base.SPARK_EXECUTOR);
+        wrapper.initAlmSystem(controllerInst, configAddresses, checkAddresses);
 
-        assertEq(foreignController.maxSlippages(maxSlippageParams[0].pool), 0);
-        assertEq(foreignController.maxSlippages(makeAddr("pool")),          0);
+        assertEq(foreignController.hasRole(FREEZER_ROLE, FREEZER), true);
+        assertEq(foreignController.hasRole(RELAYER_ROLE, RELAYER), true);
 
-        vm.startPrank(Base.SPARK_EXECUTOR);
-        wrapper.initAlmSystem(
-            controllerInst,
-            configAddresses,
-            checkAddresses,
-            mintRecipients,
-            layerZeroRecipients,
-            maxSlippageParams,
-            true
-        );
-
-        assertEq(foreignController.hasRole(foreignController.FREEZER(), freezer), true);
-        assertEq(foreignController.hasRole(foreignController.RELAYER(), relayer), true);
-
-        assertEq(almProxy.hasRole(almProxy.CONTROLLER(), address(foreignController)),     true);
-        assertEq(rateLimits.hasRole(rateLimits.CONTROLLER(), address(foreignController)), true);
-
-        assertEq(
-            foreignController.mintRecipients(mintRecipients[0].domain),
-            mintRecipients[0].mintRecipient
-        );
-
-        assertEq(
-            foreignController.mintRecipients(CCTPForwarder.DOMAIN_ID_CIRCLE_ETHEREUM),
-            bytes32(uint256(uint160(makeAddr("ethereumAlmProxy"))))
-        );
-
-        assertEq(
-            foreignController.layerZeroRecipients(layerZeroRecipients[0].destinationEndpointId),
-            layerZeroRecipients[0].recipient
-        );
-
-        assertEq(
-            foreignController.layerZeroRecipients(destinationEndpointId),
-            bytes32(uint256(uint160(makeAddr("ethereumAlmProxy"))))
-        );
-
-        assertEq(
-            foreignController.maxSlippages(maxSlippageParams[0].pool),
-            maxSlippageParams[0].maxSlippage
-        );
-
-        assertEq(
-            foreignController.maxSlippages(makeAddr("pool")),
-            0.99e18
-        );
+        assertEq(ALMProxy(almProxy).hasRole(CONTROLLER_ROLE, address(foreignController)), true);
+        assertEq(rateLimits.hasRole(CONTROLLER_ROLE,         address(foreignController)), true);
     }
 
 }
 
-contract ForeignController_UpgradeController_SuccessTests is InitAndUpgrade_TestBase {
+contract ForeignController_UpgradeController_Tests is InitAndUpgrade_TestBase {
 
-    LibraryWrapper wrapper;
+    LibraryWrapper internal wrapper;
 
-    ControllerInstance public controllerInst;
+    ControllerInstance internal controllerInst;
 
-    Init.ConfigAddressParams  configAddresses;
-    Init.CheckAddressParams   checkAddresses;
-    Init.MintRecipient[]      mintRecipients;
-    Init.LayerZeroRecipient[] layerZeroRecipients;
-    Init.MaxSlippageParams[]  maxSlippageParams;
+    Init.ConfigAddressParams internal configAddresses;
+    Init.CheckAddressParams  internal checkAddresses;
 
-    ForeignController newController;
+    ForeignController internal newController;
 
     function setUp() public override {
         super.setUp();
 
-        Init.MintRecipient[] memory mintRecipients_ = new Init.MintRecipient[](1);
+        ( configAddresses, checkAddresses ) = _getDefaultParams();
 
-        Init.LayerZeroRecipient[] memory layerZeroRecipients_ = new Init.LayerZeroRecipient[](1);
+        newController = ForeignController(
+            ForeignControllerDeploy.deployController(Base.SPARK_EXECUTOR, almProxy, address(rateLimits))
+        );
 
-        Init.MaxSlippageParams[] memory maxSlippageParams_ = new Init.MaxSlippageParams[](1);
-
-        ( configAddresses, checkAddresses, mintRecipients_, layerZeroRecipients_, maxSlippageParams_ ) = _getDefaultParams();
-
-        mintRecipients.push(mintRecipients_[0]);
-        layerZeroRecipients.push(layerZeroRecipients_[0]);
-        maxSlippageParams.push(maxSlippageParams_[0]);
-
-        newController = ForeignController(ForeignControllerDeploy.deployController({
-            admin      : Base.SPARK_EXECUTOR,
-            almProxy   : address(almProxy),
-            rateLimits : address(rateLimits),
-            psm        : address(psmBase),
-            usdc       : address(usdcBase),
-            cctp       : Base.CCTP_TOKEN_MESSENGER
-        }));
-
-        controllerInst = ControllerInstance({
-            almProxy   : address(almProxy),
-            controller : address(newController),
-            rateLimits : address(rateLimits)
-        });
+        controllerInst = ControllerInstance(almProxy, address(newController), address(rateLimits));
 
         configAddresses.oldController = address(foreignController);  // Revoke from old controller
 
@@ -652,71 +298,28 @@ contract ForeignController_UpgradeController_SuccessTests is InitAndUpgrade_Test
         return 21430000;  // Dec 18, 2024
     }
 
-    function test_upgradeController() public {
-        assertEq(newController.hasRole(newController.FREEZER(), freezer), false);
-        assertEq(newController.hasRole(newController.RELAYER(), relayer), false);
+    function test_upgradeController() external {
+        assertEq(newController.hasRole(FREEZER_ROLE, FREEZER), false);
+        assertEq(newController.hasRole(RELAYER_ROLE, RELAYER), false);
 
-        assertEq(almProxy.hasRole(almProxy.CONTROLLER(), address(foreignController)),     true);
-        assertEq(rateLimits.hasRole(rateLimits.CONTROLLER(), address(foreignController)), true);
+        assertEq(ALMProxy(almProxy).hasRole(CONTROLLER_ROLE, address(foreignController)), true);
+        assertEq(rateLimits.hasRole(CONTROLLER_ROLE,         address(foreignController)), true);
 
-        assertEq(almProxy.hasRole(almProxy.CONTROLLER(), address(newController)),     false);
-        assertEq(rateLimits.hasRole(rateLimits.CONTROLLER(), address(newController)), false);
-
-        assertEq(newController.mintRecipients(mintRecipients[0].domain),                bytes32(0));
-        assertEq(newController.mintRecipients(CCTPForwarder.DOMAIN_ID_CIRCLE_ETHEREUM), bytes32(0));
-
-        assertEq(newController.maxSlippages(maxSlippageParams[0].pool), 0);
-        assertEq(newController.maxSlippages(makeAddr("pool")),          0);
+        assertEq(ALMProxy(almProxy).hasRole(CONTROLLER_ROLE, address(newController)), false);
+        assertEq(rateLimits.hasRole(CONTROLLER_ROLE,         address(newController)), false);
 
         vm.startPrank(Base.SPARK_EXECUTOR);
-        wrapper.upgradeController(
-            controllerInst,
-            configAddresses,
-            checkAddresses,
-            mintRecipients,
-            layerZeroRecipients,
-            maxSlippageParams,
-            true
-        );
+        wrapper.upgradeController(controllerInst, configAddresses, checkAddresses);
+        vm.stopPrank();
 
-        assertEq(newController.hasRole(newController.FREEZER(), freezer), true);
-        assertEq(newController.hasRole(newController.RELAYER(), relayer), true);
+        assertEq(newController.hasRole(FREEZER_ROLE, FREEZER), true);
+        assertEq(newController.hasRole(RELAYER_ROLE, RELAYER), true);
 
-        assertEq(almProxy.hasRole(almProxy.CONTROLLER(), address(foreignController)),     false);
-        assertEq(rateLimits.hasRole(rateLimits.CONTROLLER(), address(foreignController)), false);
+        assertEq(ALMProxy(almProxy).hasRole(CONTROLLER_ROLE, address(foreignController)), false);
+        assertEq(rateLimits.hasRole(CONTROLLER_ROLE,         address(foreignController)), false);
 
-        assertEq(almProxy.hasRole(almProxy.CONTROLLER(), address(newController)),     true);
-        assertEq(rateLimits.hasRole(rateLimits.CONTROLLER(), address(newController)), true);
-
-        assertEq(
-            newController.mintRecipients(mintRecipients[0].domain),
-            mintRecipients[0].mintRecipient
-        );
-
-        assertEq(
-            newController.mintRecipients(CCTPForwarder.DOMAIN_ID_CIRCLE_ETHEREUM),
-            bytes32(uint256(uint160(makeAddr("ethereumAlmProxy"))))
-        );
-
-        assertEq(
-            newController.layerZeroRecipients(layerZeroRecipients[0].destinationEndpointId),
-            layerZeroRecipients[0].recipient
-        );
-
-        assertEq(
-            newController.layerZeroRecipients(destinationEndpointId),
-            bytes32(uint256(uint160(makeAddr("ethereumAlmProxy"))))
-        );
-
-        assertEq(
-            newController.maxSlippages(maxSlippageParams[0].pool),
-            maxSlippageParams[0].maxSlippage
-        );
-
-        assertEq(
-            newController.maxSlippages(makeAddr("pool")),
-            0.99e18
-        );
+        assertEq(ALMProxy(almProxy).hasRole(CONTROLLER_ROLE, address(newController)), true);
+        assertEq(rateLimits.hasRole(CONTROLLER_ROLE,         address(newController)), true);
     }
 
 }
