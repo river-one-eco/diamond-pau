@@ -2,13 +2,9 @@
 pragma solidity ^0.8.21;
 
 import { IAccessControl }  from "../../../lib/openzeppelin-contracts/contracts/access/IAccessControl.sol";
+import { IERC20Metadata }  from "../../../lib/openzeppelin-contracts/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import { IERC4626 }        from "../../../lib/openzeppelin-contracts/contracts/interfaces/IERC4626.sol";
 import { ReentrancyGuard } from "../../../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
-
-import { CCTPLib }      from "../../../src/libraries/CCTPLib.sol";
-import { ERC4626Lib }   from "../../../src/libraries/ERC4626Lib.sol";
-import { LayerZeroLib } from "../../../src/libraries/LayerZeroLib.sol";
-import { OTCLib }       from "../../../src/libraries/OTCLib.sol";
-import { UniswapV4Lib } from "../../../src/libraries/UniswapV4Lib.sol";
 
 import { ForeignController } from "../../../src/ForeignController.sol";
 import { MainnetController } from "../../../src/MainnetController.sol";
@@ -17,16 +13,16 @@ import { MockDaiUsds } from "../mocks/MockDaiUsds.sol";
 import { MockPSM }     from "../mocks/MockPSM.sol";
 import { MockVault }   from "../mocks/MockVault.sol";
 
-import { UnitTestBase } from "../UnitTestBase.t.sol";
+import "../UnitTestBase.t.sol";
 
-abstract contract MainnetController_Admin_TestBase is UnitTestBase {
+contract MainnetControllerAdminTestBase is UnitTestBase {
 
-    bytes32 internal layerZeroRecipient1 = bytes32(uint256(uint160(makeAddr("layerZeroRecipient1"))));
-    bytes32 internal layerZeroRecipient2 = bytes32(uint256(uint160(makeAddr("layerZeroRecipient2"))));
-    bytes32 internal mintRecipient1      = bytes32(uint256(uint160(makeAddr("mintRecipient1"))));
-    bytes32 internal mintRecipient2      = bytes32(uint256(uint160(makeAddr("mintRecipient2"))));
+    bytes32 layerZeroRecipient1 = bytes32(uint256(uint160(makeAddr("layerZeroRecipient1"))));
+    bytes32 layerZeroRecipient2 = bytes32(uint256(uint160(makeAddr("layerZeroRecipient2"))));
+    bytes32 mintRecipient1      = bytes32(uint256(uint160(makeAddr("mintRecipient1"))));
+    bytes32 mintRecipient2      = bytes32(uint256(uint160(makeAddr("mintRecipient2"))));
 
-    MainnetController internal mainnetController;
+    MainnetController mainnetController;
 
     function setUp() public {
         MockDaiUsds daiUsds = new MockDaiUsds(makeAddr("dai"));
@@ -54,7 +50,7 @@ abstract contract MainnetController_Admin_TestBase is UnitTestBase {
 
 }
 
-contract MainnetController_Admin_SetMintRecipient_Tests is MainnetController_Admin_TestBase {
+contract MainnetControllerSetMintRecipientTests is MainnetControllerAdminTestBase {
 
     function test_setMintRecipient_reentrancy() external {
         _setControllerEntered();
@@ -62,7 +58,7 @@ contract MainnetController_Admin_SetMintRecipient_Tests is MainnetController_Adm
         mainnetController.setMintRecipient(1, mintRecipient1);
     }
 
-    function test_setMintRecipient_unauthorizedAccount() external {
+    function test_setMintRecipient_unauthorizedAccount() public {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
@@ -70,41 +66,38 @@ contract MainnetController_Admin_SetMintRecipient_Tests is MainnetController_Adm
         ));
         mainnetController.setMintRecipient(1, mintRecipient1);
 
+        vm.prank(freezer);
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             freezer,
             DEFAULT_ADMIN_ROLE
         ));
-        vm.prank(freezer);
         mainnetController.setMintRecipient(1, mintRecipient1);
     }
 
-    function test_setMintRecipient() external {
+    function test_setMintRecipient() public {
         assertEq(mainnetController.mintRecipients(1), bytes32(0));
         assertEq(mainnetController.mintRecipients(2), bytes32(0));
 
-        vm.expectEmit(address(mainnetController));
-        emit CCTPLib.MintRecipientSet(1, mintRecipient1);
-
         vm.prank(admin);
+        vm.expectEmit(address(mainnetController));
+        emit MainnetController.MintRecipientSet(1, mintRecipient1);
         mainnetController.setMintRecipient(1, mintRecipient1);
 
         assertEq(mainnetController.mintRecipients(1), mintRecipient1);
 
-        vm.expectEmit(address(mainnetController));
-        emit CCTPLib.MintRecipientSet(2, mintRecipient2);
-
         vm.prank(admin);
+        vm.expectEmit(address(mainnetController));
+        emit MainnetController.MintRecipientSet(2, mintRecipient2);
         mainnetController.setMintRecipient(2, mintRecipient2);
 
         assertEq(mainnetController.mintRecipients(2), mintRecipient2);
 
         vm.record();
 
-        vm.expectEmit(address(mainnetController));
-        emit CCTPLib.MintRecipientSet(1, mintRecipient2);
-
         vm.prank(admin);
+        vm.expectEmit(address(mainnetController));
+        emit MainnetController.MintRecipientSet(1, mintRecipient2);
         mainnetController.setMintRecipient(1, mintRecipient2);
 
         assertEq(mainnetController.mintRecipients(1), mintRecipient2);
@@ -114,7 +107,7 @@ contract MainnetController_Admin_SetMintRecipient_Tests is MainnetController_Adm
 
 }
 
-contract MainnetController_Admin_SetLayerZeroRecipient_Tests is MainnetController_Admin_TestBase {
+contract MainnetControllerSetLayerZeroRecipientTests is MainnetControllerAdminTestBase {
 
     function test_setLayerZeroRecipient_reentrancy() external {
         _setControllerEntered();
@@ -122,7 +115,7 @@ contract MainnetController_Admin_SetLayerZeroRecipient_Tests is MainnetControlle
         mainnetController.setLayerZeroRecipient(1, layerZeroRecipient1);
     }
 
-    function test_setLayerZeroRecipient_unauthorizedAccount() external {
+    function test_setLayerZeroRecipient_unauthorizedAccount() public {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
@@ -130,41 +123,38 @@ contract MainnetController_Admin_SetLayerZeroRecipient_Tests is MainnetControlle
         ));
         mainnetController.setLayerZeroRecipient(1, layerZeroRecipient1);
 
+        vm.prank(freezer);
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             freezer,
             DEFAULT_ADMIN_ROLE
         ));
-        vm.prank(freezer);
         mainnetController.setMintRecipient(1, mintRecipient1);
     }
 
-    function test_setLayerZeroRecipient() external {
+    function test_setLayerZeroRecipient() public {
         assertEq(mainnetController.layerZeroRecipients(1), bytes32(0));
         assertEq(mainnetController.layerZeroRecipients(2), bytes32(0));
 
-        vm.expectEmit(address(mainnetController));
-        emit LayerZeroLib.LayerZeroRecipientSet(1, layerZeroRecipient1);
-
         vm.prank(admin);
+        vm.expectEmit(address(mainnetController));
+        emit MainnetController.LayerZeroRecipientSet(1, layerZeroRecipient1);
         mainnetController.setLayerZeroRecipient(1, layerZeroRecipient1);
 
         assertEq(mainnetController.layerZeroRecipients(1), layerZeroRecipient1);
 
-        vm.expectEmit(address(mainnetController));
-        emit LayerZeroLib.LayerZeroRecipientSet(2, layerZeroRecipient2);
-
         vm.prank(admin);
+        vm.expectEmit(address(mainnetController));
+        emit MainnetController.LayerZeroRecipientSet(2, layerZeroRecipient2);
         mainnetController.setLayerZeroRecipient(2, layerZeroRecipient2);
 
         assertEq(mainnetController.layerZeroRecipients(2), layerZeroRecipient2);
 
         vm.record();
 
-        vm.expectEmit(address(mainnetController));
-        emit LayerZeroLib.LayerZeroRecipientSet(1, layerZeroRecipient2);
-
         vm.prank(admin);
+        vm.expectEmit(address(mainnetController));
+        emit MainnetController.LayerZeroRecipientSet(1, layerZeroRecipient2);
         mainnetController.setLayerZeroRecipient(1, layerZeroRecipient2);
 
         assertEq(mainnetController.layerZeroRecipients(1), layerZeroRecipient2);
@@ -174,7 +164,7 @@ contract MainnetController_Admin_SetLayerZeroRecipient_Tests is MainnetControlle
 
 }
 
-contract MainnetController_Admin_SetMaxSlippage_Tests is MainnetController_Admin_TestBase {
+contract MainnetControllerSetMaxSlippageTests is MainnetControllerAdminTestBase {
 
     function test_setMaxSlippage_reentrancy() external {
         _setControllerEntered();
@@ -182,7 +172,7 @@ contract MainnetController_Admin_SetMaxSlippage_Tests is MainnetController_Admin
         mainnetController.setMaxSlippage(makeAddr("pool"), 0.98e18);
     }
 
-    function test_setMaxSlippage_unauthorizedAccount() external {
+    function test_setMaxSlippage_unauthorizedAccount() public {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
@@ -199,13 +189,13 @@ contract MainnetController_Admin_SetMaxSlippage_Tests is MainnetController_Admin
         mainnetController.setMaxSlippage(makeAddr("pool"), 0.98e18);
     }
 
-    function test_setMaxSlippage_poolZeroAddress() external {
+    function test_setMaxSlippage_poolZeroAddress() public {
         vm.prank(admin);
         vm.expectRevert("MC/pool-zero-address");
         mainnetController.setMaxSlippage(address(0), 0.98e18);
     }
 
-    function test_setMaxSlippage() external {
+    function test_setMaxSlippage() public {
         address pool = makeAddr("pool");
 
         assertEq(mainnetController.maxSlippages(pool), 0);
@@ -231,7 +221,7 @@ contract MainnetController_Admin_SetMaxSlippage_Tests is MainnetController_Admin
 
 }
 
-contract MainnetController_Admin_SetOTCBuffer_Tests is MainnetController_Admin_TestBase {
+contract MainnetControllerSetOTCBufferTests is MainnetControllerAdminTestBase {
 
     address exchange  = makeAddr("exchange");
     address otcBuffer = makeAddr("otcBuffer");
@@ -252,46 +242,45 @@ contract MainnetController_Admin_SetOTCBuffer_Tests is MainnetController_Admin_T
     }
 
     function test_setOTCBuffer_exchangeZero() external {
-        vm.expectRevert("OTCLib/exchange-zero-address");
         vm.prank(admin);
+        vm.expectRevert("MC/exchange-zero-address");
         mainnetController.setOTCBuffer(address(0), address(otcBuffer));
     }
 
     function test_setOTCBuffer_otcBufferZero() external {
-        vm.expectRevert("OTCLib/otcBuffer-zero-address");
         vm.prank(admin);
+        vm.expectRevert("MC/otcBuffer-zero-address");
         mainnetController.setOTCBuffer(exchange, address(0));
     }
 
     function test_setOTCBuffer_exchangeEqualsOTCBuffer() external {
-        vm.expectRevert("OTCLib/exchange-equals-otcBuffer");
         vm.prank(admin);
+        vm.expectRevert("MC/exchange-equals-otcBuffer");
         mainnetController.setOTCBuffer(address(otcBuffer), address(otcBuffer));
     }
 
     function test_setOTCBuffer() external {
-        ( address otcBuffer_, , , , ) = mainnetController.otcs(exchange);
+        ( address otcBuffer_,,,, ) = mainnetController.otcs(exchange);
 
         assertEq(otcBuffer_, address(0));
 
         vm.record();
 
-        vm.expectEmit(address(mainnetController));
-        emit OTCLib.OTCBufferSet(exchange, address(otcBuffer));
-
         vm.prank(admin);
+        vm.expectEmit(address(mainnetController));
+        emit MainnetController.OTCBufferSet(exchange, address(0), address(otcBuffer));
         mainnetController.setOTCBuffer(exchange, address(otcBuffer));
 
         _assertReentrancyGuardWrittenToTwice();
 
-        ( otcBuffer_, , , , ) = mainnetController.otcs(exchange);
+        ( otcBuffer_,,,, ) = mainnetController.otcs(exchange);
 
         assertEq(otcBuffer_, address(otcBuffer));
     }
 
 }
 
-contract MainnetController_Admin_SetOTCRechargeRate_Tests is MainnetController_Admin_TestBase {
+contract MainnetControllerSetOTCRechargeRateTests is MainnetControllerAdminTestBase {
 
     address exchange = makeAddr("exchange");
 
@@ -311,32 +300,31 @@ contract MainnetController_Admin_SetOTCRechargeRate_Tests is MainnetController_A
     }
 
     function test_setOTCRechargeRate_exchangeZero() external {
-        vm.expectRevert("OTCLib/exchange-zero-address");
         vm.prank(admin);
+        vm.expectRevert("MC/exchange-zero-address");
         mainnetController.setOTCRechargeRate(address(0), uint256(1_000_000e18) / 1 days);
     }
 
     function test_setOTCRechargeRate() external {
-        ( , uint256 rate18, , , ) = mainnetController.otcs(exchange);
+        ( , uint256 rate18,,, ) = mainnetController.otcs(exchange);
         assertEq(rate18, 0);
 
         vm.record();
 
-        vm.expectEmit(address(mainnetController));
-        emit OTCLib.OTCRechargeRateSet(exchange, uint256(1_000_000e18) / 1 days);
-
         vm.prank(admin);
+        vm.expectEmit(address(mainnetController));
+        emit MainnetController.OTCRechargeRateSet(exchange, 0, uint256(1_000_000e18) / 1 days);
         mainnetController.setOTCRechargeRate(exchange, uint256(1_000_000e18) / 1 days);
 
         _assertReentrancyGuardWrittenToTwice();
 
-        ( , rate18, , , ) = mainnetController.otcs(exchange);
+        ( , rate18,,, ) = mainnetController.otcs(exchange);
         assertEq(rate18, uint256(1_000_000e18) / 1 days);
     }
 
 }
 
-contract MainnetController_Admin_SetOTCWhitelistedAsset_Tests is MainnetController_Admin_TestBase {
+contract MainnetControllerSetOTCWhitelistedAssetTests is MainnetControllerAdminTestBase {
 
     address asset    = makeAddr("asset");
     address exchange = makeAddr("exchange");
@@ -357,20 +345,20 @@ contract MainnetController_Admin_SetOTCWhitelistedAsset_Tests is MainnetControll
     }
 
     function test_setOTCWhitelistedAsset_exchangeZero() external {
-        vm.expectRevert("OTCLib/exchange-zero-address");
         vm.prank(admin);
+        vm.expectRevert("MC/exchange-zero-address");
         mainnetController.setOTCWhitelistedAsset(address(0), asset, true);
     }
 
     function test_setOTCWhitelistedAsset_assetZero() external {
-        vm.expectRevert("OTCLib/asset-zero-address");
         vm.prank(admin);
+        vm.expectRevert("MC/asset-zero-address");
         mainnetController.setOTCWhitelistedAsset(exchange, address(0), true);
     }
 
     function test_setOTCWhitelistedAsset_otcBufferNotSet() external {
-        vm.expectRevert("OTCLib/otc-buffer-not-set");
         vm.prank(admin);
+        vm.expectRevert("MC/otc-buffer-not-set");
         mainnetController.setOTCWhitelistedAsset(makeAddr("fake-exchange"), asset, true);
     }
 
@@ -380,8 +368,7 @@ contract MainnetController_Admin_SetOTCWhitelistedAsset_Tests is MainnetControll
         mainnetController.setOTCBuffer(exchange, asset);
 
         vm.expectEmit(address(mainnetController));
-        emit OTCLib.OTCWhitelistedAssetSet(exchange, asset, true);
-
+        emit MainnetController.OTCWhitelistedAssetSet(exchange, asset, true);
         mainnetController.setOTCWhitelistedAsset(exchange, asset, true);
 
         vm.stopPrank();
@@ -390,10 +377,9 @@ contract MainnetController_Admin_SetOTCWhitelistedAsset_Tests is MainnetControll
 
         vm.record();
 
-        vm.expectEmit(address(mainnetController));
-        emit OTCLib.OTCWhitelistedAssetSet(exchange, asset, false);
-
         vm.prank(admin);
+        vm.expectEmit(address(mainnetController));
+        emit MainnetController.OTCWhitelistedAssetSet(exchange, asset, false);
         mainnetController.setOTCWhitelistedAsset(exchange, asset, false);
 
         _assertReentrancyGuardWrittenToTwice();
@@ -403,7 +389,7 @@ contract MainnetController_Admin_SetOTCWhitelistedAsset_Tests is MainnetControll
 
 }
 
-contract MainnetController_Admin_SetMaxExchangeRate_Tests is MainnetController_Admin_TestBase {
+contract MainnetControllerSetMaxExchangeRateTests is MainnetControllerAdminTestBase {
 
     function test_setMaxExchangeRate_reentrancy() external {
         _setControllerEntered();
@@ -421,8 +407,8 @@ contract MainnetController_Admin_SetMaxExchangeRate_Tests is MainnetController_A
     }
 
     function test_setMaxExchangeRate_tokenZeroAddress() external {
-        vm.expectRevert("ERC4626Lib/token-zero-address");
         vm.prank(admin);
+        vm.expectRevert("MC/token-zero-address");
         mainnetController.setMaxExchangeRate(address(0), 1e18, 1e18);
     }
 
@@ -433,28 +419,25 @@ contract MainnetController_Admin_SetMaxExchangeRate_Tests is MainnetController_A
 
         vm.record();
 
-        vm.expectEmit(address(mainnetController));
-        emit ERC4626Lib.MaxExchangeRateSet(token, 1e36);
-
         vm.prank(admin);
+        vm.expectEmit(address(mainnetController));
+        emit MainnetController.MaxExchangeRateSet(token, 1e36);
         mainnetController.setMaxExchangeRate(token, 1e18, 1e18);
 
         _assertReentrancyGuardWrittenToTwice();
 
         assertEq(mainnetController.maxExchangeRates(token), 1e36);
 
-        vm.expectEmit(address(mainnetController));
-        emit ERC4626Lib.MaxExchangeRateSet(token, 1e24);
-
         vm.prank(admin);
+        vm.expectEmit(address(mainnetController));
+        emit MainnetController.MaxExchangeRateSet(token, 1e24);
         mainnetController.setMaxExchangeRate(token, 1e18, 1e6);
 
         assertEq(mainnetController.maxExchangeRates(token), 1e24);
 
-        vm.expectEmit(address(mainnetController));
-        emit ERC4626Lib.MaxExchangeRateSet(token, 1e48);
-
         vm.prank(admin);
+        vm.expectEmit(address(mainnetController));
+        emit MainnetController.MaxExchangeRateSet(token, 1e48);
         mainnetController.setMaxExchangeRate(token, 1e6, 1e18);
 
         assertEq(mainnetController.maxExchangeRates(token), 1e48);
@@ -462,7 +445,7 @@ contract MainnetController_Admin_SetMaxExchangeRate_Tests is MainnetController_A
 
 }
 
-contract MainnetController_Admin_SetUniswapV4TickLimits_Tests is MainnetController_Admin_TestBase {
+contract MainnetControllerSetUniswapV4TickLimitsTests is MainnetControllerAdminTestBase {
 
     bytes32 internal constant _POOL_ID = 0x8aa4e11cbdf30eedc92100f4c8a31ff748e201d44712cc8c90d189edaa8e4e47;
 
@@ -488,15 +471,15 @@ contract MainnetController_Admin_SetUniswapV4TickLimits_Tests is MainnetControll
     }
 
     function test_setUniswapV4TickLimits_revertsWhenInvalidTicks() external {
-        vm.expectRevert("UniswapV4Lib/invalid-ticks");
         vm.prank(admin);
+        vm.expectRevert("MC/invalid-ticks");
         mainnetController.setUniswapV4TickLimits(bytes32(0), 1, 1, 1); // Reverts when lower >= upper
 
         vm.prank(admin);
         mainnetController.setUniswapV4TickLimits(bytes32(0), 0, 1, 1); // lower must be less than upper
 
-        vm.expectRevert("UniswapV4Lib/invalid-ticks");
         vm.prank(admin);
+        vm.expectRevert("MC/invalid-ticks");
         mainnetController.setUniswapV4TickLimits(bytes32(0), 0, 1, 0); // Reverts when maxTickSpacing is zero
 
         vm.prank(admin);
@@ -505,7 +488,7 @@ contract MainnetController_Admin_SetUniswapV4TickLimits_Tests is MainnetControll
 
     function test_setUniswapV4TickLimits() external {
         vm.expectEmit(address(mainnetController));
-        emit UniswapV4Lib.UniswapV4TickLimitsSet(_POOL_ID, -60, 60, 20);
+        emit MainnetController.UniswapV4TickLimitsSet(_POOL_ID, -60, 60, 20);
 
         vm.record();
 
@@ -523,7 +506,7 @@ contract MainnetController_Admin_SetUniswapV4TickLimits_Tests is MainnetControll
 
 }
 
-contract ForeignController_Admin_Tests is UnitTestBase {
+contract ForeignControllerAdminTests is UnitTestBase {
 
     ForeignController foreignController;
 
@@ -557,7 +540,7 @@ contract ForeignController_Admin_Tests is UnitTestBase {
         foreignController.setMaxSlippage(makeAddr("pool"), 0.98e18);
     }
 
-    function test_setMaxSlippage_unauthorizedAccount() external {
+    function test_setMaxSlippage_unauthorizedAccount() public {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
@@ -574,13 +557,13 @@ contract ForeignController_Admin_Tests is UnitTestBase {
         foreignController.setMaxSlippage(makeAddr("pool"), 0.98e18);
     }
 
-    function test_setMaxSlippage_poolZeroAddress() external {
+    function test_setMaxSlippage_poolZeroAddress() public {
         vm.prank(admin);
         vm.expectRevert("FC/pool-zero-address");
         foreignController.setMaxSlippage(address(0), 0.98e18);
     }
 
-    function test_setMaxSlippage() external {
+    function test_setMaxSlippage() public {
         address pool = makeAddr("pool");
 
         assertEq(foreignController.maxSlippages(pool), 0);
@@ -610,7 +593,7 @@ contract ForeignController_Admin_Tests is UnitTestBase {
         foreignController.setMintRecipient(1, mintRecipient1);
     }
 
-    function test_setMintRecipient_unauthorizedAccount() external {
+    function test_setMintRecipient_unauthorizedAccount() public {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
@@ -627,32 +610,29 @@ contract ForeignController_Admin_Tests is UnitTestBase {
         foreignController.setMintRecipient(1, mintRecipient1);
     }
 
-    function test_setMintRecipient() external {
+    function test_setMintRecipient() public {
         assertEq(foreignController.mintRecipients(1), bytes32(0));
         assertEq(foreignController.mintRecipients(2), bytes32(0));
 
-        vm.expectEmit(address(foreignController));
-        emit CCTPLib.MintRecipientSet(1, mintRecipient1);
-
         vm.prank(admin);
+        vm.expectEmit(address(foreignController));
+        emit ForeignController.MintRecipientSet(1, mintRecipient1);
         foreignController.setMintRecipient(1, mintRecipient1);
 
         assertEq(foreignController.mintRecipients(1), mintRecipient1);
 
-        vm.expectEmit(address(foreignController));
-        emit CCTPLib.MintRecipientSet(2, mintRecipient2);
-
         vm.prank(admin);
+        vm.expectEmit(address(foreignController));
+        emit ForeignController.MintRecipientSet(2, mintRecipient2);
         foreignController.setMintRecipient(2, mintRecipient2);
 
         assertEq(foreignController.mintRecipients(2), mintRecipient2);
 
         vm.record();
 
-        vm.expectEmit(address(foreignController));
-        emit CCTPLib.MintRecipientSet(1, mintRecipient2);
-
         vm.prank(admin);
+        vm.expectEmit(address(foreignController));
+        emit ForeignController.MintRecipientSet(1, mintRecipient2);
         foreignController.setMintRecipient(1, mintRecipient2);
 
         assertEq(foreignController.mintRecipients(1), mintRecipient2);
@@ -666,7 +646,7 @@ contract ForeignController_Admin_Tests is UnitTestBase {
         foreignController.setLayerZeroRecipient(1, layerZeroRecipient1);
     }
 
-    function test_setLayerZeroRecipient_unauthorizedAccount() external {
+    function test_setLayerZeroRecipient_unauthorizedAccount() public {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
@@ -674,41 +654,38 @@ contract ForeignController_Admin_Tests is UnitTestBase {
         ));
         foreignController.setLayerZeroRecipient(1, layerZeroRecipient1);
 
+        vm.prank(freezer);
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             freezer,
             DEFAULT_ADMIN_ROLE
         ));
-        vm.prank(freezer);
         foreignController.setLayerZeroRecipient(1, layerZeroRecipient1);
     }
 
-    function test_setLayerZeroRecipient() external {
+    function test_setLayerZeroRecipient() public {
         assertEq(foreignController.layerZeroRecipients(1), bytes32(0));
         assertEq(foreignController.layerZeroRecipients(2), bytes32(0));
 
-        vm.expectEmit(address(foreignController));
-        emit LayerZeroLib.LayerZeroRecipientSet(1, layerZeroRecipient1);
-
         vm.prank(admin);
+        vm.expectEmit(address(foreignController));
+        emit ForeignController.LayerZeroRecipientSet(1, layerZeroRecipient1);
         foreignController.setLayerZeroRecipient(1, layerZeroRecipient1);
 
         assertEq(foreignController.layerZeroRecipients(1), layerZeroRecipient1);
 
-        vm.expectEmit(address(foreignController));
-        emit LayerZeroLib.LayerZeroRecipientSet(2, layerZeroRecipient2);
-
         vm.prank(admin);
+        vm.expectEmit(address(foreignController));
+        emit ForeignController.LayerZeroRecipientSet(2, layerZeroRecipient2);
         foreignController.setLayerZeroRecipient(2, layerZeroRecipient2);
 
         assertEq(foreignController.layerZeroRecipients(2), layerZeroRecipient2);
 
         vm.record();
 
-        vm.expectEmit(address(foreignController));
-        emit LayerZeroLib.LayerZeroRecipientSet(1, layerZeroRecipient2);
-
         vm.prank(admin);
+        vm.expectEmit(address(foreignController));
+        emit ForeignController.LayerZeroRecipientSet(1, layerZeroRecipient2);
         foreignController.setLayerZeroRecipient(1, layerZeroRecipient2);
 
         assertEq(foreignController.layerZeroRecipients(1), layerZeroRecipient2);
@@ -732,8 +709,8 @@ contract ForeignController_Admin_Tests is UnitTestBase {
     }
 
     function test_setMaxExchangeRate_tokenZeroAddress() external {
-        vm.expectRevert("ERC4626Lib/token-zero-address");
         vm.prank(admin);
+        vm.expectRevert("FC/token-zero-address");
         foreignController.setMaxExchangeRate(address(0), 1e18, 1e18);
     }
 
@@ -744,28 +721,25 @@ contract ForeignController_Admin_Tests is UnitTestBase {
 
         vm.record();
 
-        vm.expectEmit(address(foreignController));
-        emit ERC4626Lib.MaxExchangeRateSet(token, 1e36);
-
         vm.prank(admin);
+        vm.expectEmit(address(foreignController));
+        emit ForeignController.MaxExchangeRateSet(token, 1e36);
         foreignController.setMaxExchangeRate(token, 1e18, 1e18);
 
         _assertReentrancyGuardWrittenToTwice();
 
         assertEq(foreignController.maxExchangeRates(token), 1e36);
 
-        vm.expectEmit(address(foreignController));
-        emit ERC4626Lib.MaxExchangeRateSet(token, 1e24);
-
         vm.prank(admin);
+        vm.expectEmit(address(foreignController));
+        emit ForeignController.MaxExchangeRateSet(token, 1e24);
         foreignController.setMaxExchangeRate(token, 1e18, 1e6);
 
         assertEq(foreignController.maxExchangeRates(token), 1e24);
 
-        vm.expectEmit(address(foreignController));
-        emit ERC4626Lib.MaxExchangeRateSet(token, 1e48);
-
         vm.prank(admin);
+        vm.expectEmit(address(foreignController));
+        emit ForeignController.MaxExchangeRateSet(token, 1e48);
         foreignController.setMaxExchangeRate(token, 1e6, 1e18);
 
         assertEq(foreignController.maxExchangeRates(token), 1e48);

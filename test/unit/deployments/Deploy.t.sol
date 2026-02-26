@@ -1,25 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.21;
 
-import { ControllerInstance } from "../../../deploy/ControllerInstance.sol";
-
-import {
-    ForeignControllerDeploy,
-    MainnetControllerDeploy
-} from "../../../deploy/ControllerDeploy.sol";
+import "../../../deploy/ControllerDeploy.sol";  // All imports needed so not importing explicitly
 
 import { MockDaiUsds } from "../mocks/MockDaiUsds.sol";
 import { MockPSM }     from "../mocks/MockPSM.sol";
 import { MockVault }   from "../mocks/MockVault.sol";
 
-import { ALMProxy }          from "../../../src/ALMProxy.sol";
-import { ForeignController } from "../../../src/ForeignController.sol";
-import { MainnetController } from "../../../src/MainnetController.sol";
-import { RateLimits }        from "../../../src/RateLimits.sol";
+import "../UnitTestBase.t.sol";
 
-import { UnitTestBase } from "../UnitTestBase.t.sol";
-
-contract ForeignController_Deploy_Tests is UnitTestBase {
+contract ForeignControllerDeployTests is UnitTestBase {
 
     function test_deployController() public {
         address admin = makeAddr("admin");
@@ -76,7 +66,7 @@ contract ForeignController_Deploy_Tests is UnitTestBase {
 
 }
 
-contract MainnetController_Deploy_Tests is UnitTestBase {
+contract MainnetControllerDeployTests is UnitTestBase {
 
     struct TestVars {
         address daiUsds;

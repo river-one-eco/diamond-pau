@@ -1,22 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity ^0.8.21;
+pragma solidity >=0.8.0;
 
-import { Test, StdChains } from "../../lib/forge-std/src/Test.sol";
+import "./ForkTestBase.t.sol";
 
-import { ERC20 } from "../../lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
-
-import { Ethereum } from "../../lib/spark-address-registry/src/Ethereum.sol";
-
-import { DomainHelpers } from "../../lib/xchain-helpers/src/testing/Domain.sol";
+import { ForeignController } from "../../src/ForeignController.sol";
+import { MainnetController } from "../../src/MainnetController.sol";
 
 import { ApproveLib } from "../../src/libraries/ApproveLib.sol";
+import { CurveLib }   from "../../src/libraries/CurveLib.sol";
 
-import { ALMProxy } from "../../src/ALMProxy.sol";
+import { IALMProxy } from "../../src/interfaces/IALMProxy.sol";
 
-interface IERC20Like {
+import { ERC20 } from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 
-    function allowance(address owner, address spender) external view returns (uint256);
-
+interface IHarness {
+    function approve(address token, address spender, uint256 amount) external;
+    function approveCurve(address proxy, address token, address spender, uint256 amount) external;
 }
 
 contract ERC20ApproveFalseExistingAllowance is ERC20 {
@@ -47,92 +46,248 @@ contract ERC20ApproveFalseNonZeroAmount is ERC20 {
 
 }
 
-contract Harness {
+contract MainnetControllerHarness is MainnetController {
 
-    address internal _proxy;
+    using CurveLib for IALMProxy;
 
-    constructor(address proxy) {
-        _proxy = proxy;
-    }
+    constructor(
+        address admin_,
+        address proxy_,
+        address rateLimits_,
+        address vault_,
+        address psm_,
+        address daiUsds_,
+        address cctp_
+    ) MainnetController(admin_, proxy_, rateLimits_, vault_, psm_, daiUsds_, cctp_) {}
 
     function approve(address token, address spender, uint256 amount) external {
-        ApproveLib.approve(token, _proxy, spender, amount);
+        ApproveLib.approve(token, address(proxy), spender, amount);
+    }
+
+    function approveCurve(address proxy, address token, address spender, uint256 amount) external {
+        ApproveLib.approve(token, proxy, spender, amount);
     }
 
 }
 
-contract Approve_Tests is Test {
+contract ForeignControllerHarness is ForeignController {
 
-    ALMProxy internal almProxy;
-    Harness  internal harness;
+    constructor(
+        address admin_,
+        address proxy_,
+        address rateLimits_,
+        address psm_,
+        address usdc_,
+        address cctp_
+    ) ForeignController(admin_, proxy_, rateLimits_, psm_, usdc_, cctp_) {}
 
-    address internal admin;
-    address internal spender;
+    function approve(address token, address spender, uint256 amount) external {
+        _approve(token, spender, amount);
+    }
 
-    function setUp() external {
-        DomainHelpers.createSelectFork(getChain("mainnet"), _getBlock());
+}
 
-        admin   = makeAddr("admin");
-        spender = makeAddr("spender");
+contract ApproveTestBase is ForkTestBase {
 
-        almProxy = new ALMProxy(admin);
-        harness  = new Harness(address(almProxy));
+    function _approveTest(address token, address harness) internal {
+        address spender = makeAddr("spender");
 
-        vm.startPrank(admin);
-        almProxy.grantRole(almProxy.CONTROLLER(), address(harness));
+        assertEq(IERC20(token).allowance(harness, spender), 0);
+
+        IHarness(harness).approve(token, spender, 100);
+
+        assertEq(IERC20(token).allowance(address(almProxy), spender), 100);
+
+        IHarness(harness).approve(token, spender, 200);  // Would revert without setting to zero
+
+        assertEq(IERC20(token).allowance(address(almProxy), spender), 200);
+    }
+
+    function _approveCurveTest(address token, address harness) internal {
+        address spender = makeAddr("spender");
+
+        assertEq(IERC20(token).allowance(harness, spender), 0);
+
+        IHarness(harness).approveCurve(address(almProxy), token, spender, 100);
+
+        assertEq(IERC20(token).allowance(address(almProxy), spender), 100);
+
+        IHarness(harness).approveCurve(address(almProxy), token, spender, 200);  // Would revert without setting to zero
+
+        assertEq(IERC20(token).allowance(address(almProxy), spender), 200);
+    }
+
+}
+
+contract MainnetControllerApproveSuccessTests is ApproveTestBase {
+
+    address harness;
+
+    function setUp() public virtual override {
+        super.setUp();
+
+        MainnetControllerHarness harnessCode = new MainnetControllerHarness(
+            SPARK_PROXY,
+            address(mainnetController.proxy()),
+            address(mainnetController.rateLimits()),
+            address(mainnetController.vault()),
+            address(mainnetController.psm()),
+            address(mainnetController.daiUsds()),
+            address(mainnetController.cctp())
+        );
+
+        vm.etch(address(mainnetController), address(harnessCode).code);
+
+        harness = address(MainnetControllerHarness(address(mainnetController)));
+    }
+
+    function test_approveTokens() public {
+        _approveTest(Ethereum.CBBTC,  harness);
+        _approveTest(Ethereum.DAI,    harness);
+        _approveTest(Ethereum.GNO,    harness);
+        _approveTest(Ethereum.MKR,    harness);
+        _approveTest(Ethereum.RETH,   harness);
+        _approveTest(Ethereum.SDAI,   harness);
+        _approveTest(Ethereum.SUSDE,  harness);
+        _approveTest(Ethereum.SUSDS,  harness);
+        _approveTest(Ethereum.USDC,   harness);
+        _approveTest(Ethereum.USDE,   harness);
+        _approveTest(Ethereum.USDS,   harness);
+        _approveTest(Ethereum.USCC,   harness);
+        _approveTest(Ethereum.USDT,   harness);
+        _approveTest(Ethereum.USTB,   harness);
+        _approveTest(Ethereum.WBTC,   harness);
+        _approveTest(Ethereum.WEETH,  harness);
+        _approveTest(Ethereum.WETH,   harness);
+        _approveTest(Ethereum.WSTETH, harness);
+    }
+
+    function test_approveCurveTokens() public {
+        _approveCurveTest(Ethereum.CBBTC,  harness);
+        _approveCurveTest(Ethereum.DAI,    harness);
+        _approveCurveTest(Ethereum.GNO,    harness);
+        _approveCurveTest(Ethereum.MKR,    harness);
+        _approveCurveTest(Ethereum.RETH,   harness);
+        _approveCurveTest(Ethereum.SDAI,   harness);
+        _approveCurveTest(Ethereum.SUSDE,  harness);
+        _approveCurveTest(Ethereum.SUSDS,  harness);
+        _approveCurveTest(Ethereum.USDC,   harness);
+        _approveCurveTest(Ethereum.USDE,   harness);
+        _approveCurveTest(Ethereum.USDS,   harness);
+        _approveCurveTest(Ethereum.USCC,   harness);
+        _approveCurveTest(Ethereum.USDT,   harness);
+        _approveCurveTest(Ethereum.USTB,   harness);
+        _approveCurveTest(Ethereum.WBTC,   harness);
+        _approveCurveTest(Ethereum.WEETH,  harness);
+        _approveCurveTest(Ethereum.WETH,   harness);
+        _approveCurveTest(Ethereum.WSTETH, harness);
+    }
+
+}
+
+// NOTE: This code is running against mainnet, but is used to demonstrate equivalent approve behaviour
+//       for USDT-type contracts. Because of this, the foreignController has to be onboarded in the same
+//       way as the mainnetController.
+contract ForeignControllerApproveSuccessTests is ApproveTestBase {
+
+    address harness;
+
+    function setUp() public virtual override {
+        super.setUp();
+
+        // NOTE: This etching setup is necessary to get coverage to work
+
+        ForeignController foreignController = new ForeignController(
+            SPARK_PROXY,
+            address(almProxy),
+            makeAddr("rateLimits"),
+            makeAddr("psm"),
+            makeAddr("usdc"),
+            makeAddr("cctp")
+        );
+
+        ForeignControllerHarness harnessCode = new ForeignControllerHarness(
+            SPARK_PROXY,
+            address(almProxy),
+            makeAddr("rateLimits"),
+            makeAddr("psm"),
+            makeAddr("usdc"),
+            makeAddr("cctp")
+        );
+
+        // Allow the foreign controller to call the ALMProxy
+        vm.startPrank(SPARK_PROXY);
+        almProxy.grantRole(almProxy.CONTROLLER(), address(foreignController));
         vm.stopPrank();
+
+        vm.etch(address(foreignController), address(harnessCode).code);
+
+        harness = address(ForeignControllerHarness(address(foreignController)));
     }
 
-    function _getBlock() internal virtual pure returns (uint256) {
-        return 20917850; //  October 7, 2024
+    function test_approveTokens() public {
+        _approveTest(Ethereum.CBBTC,  harness);
+        _approveTest(Ethereum.DAI,    harness);
+        _approveTest(Ethereum.GNO,    harness);
+        _approveTest(Ethereum.MKR,    harness);
+        _approveTest(Ethereum.RETH,   harness);
+        _approveTest(Ethereum.SDAI,   harness);
+        _approveTest(Ethereum.SUSDE,  harness);
+        _approveTest(Ethereum.SUSDS,  harness);
+        _approveTest(Ethereum.USDC,   harness);
+        _approveTest(Ethereum.USDE,   harness);
+        _approveTest(Ethereum.USDS,   harness);
+        _approveTest(Ethereum.USCC,   harness);
+        _approveTest(Ethereum.USDT,   harness);
+        _approveTest(Ethereum.USTB,   harness);
+        _approveTest(Ethereum.WBTC,   harness);
+        _approveTest(Ethereum.WEETH,  harness);
+        _approveTest(Ethereum.WETH,   harness);
+        _approveTest(Ethereum.WSTETH, harness);
     }
 
-    function _approveTest(address token) internal {
-        assertEq(IERC20Like(token).allowance(address(harness),  spender), 0);
-        assertEq(IERC20Like(token).allowance(address(almProxy), spender), 0);
+}
 
-        harness.approve(token, spender, 100);
+contract ERC20ApproveReturningFalseExistingAllowanceMainnetTest is MainnetControllerApproveSuccessTests {
 
-        assertEq(IERC20Like(token).allowance(address(harness),  spender), 0);
-        assertEq(IERC20Like(token).allowance(address(almProxy), spender), 100);
-
-        harness.approve(token, spender, 200);  // Would revert without setting to zero
-
-        assertEq(IERC20Like(token).allowance(address(harness),  spender), 0);
-        assertEq(IERC20Like(token).allowance(address(almProxy), spender), 200);
-    }
-
-    function test_approve_tokens() external {
-        _approveTest(Ethereum.CBBTC);
-        _approveTest(Ethereum.DAI);
-        _approveTest(Ethereum.GNO);
-        _approveTest(Ethereum.MKR);
-        _approveTest(Ethereum.RETH);
-        _approveTest(Ethereum.SDAI);
-        _approveTest(Ethereum.SUSDE);
-        _approveTest(Ethereum.SUSDS);
-        _approveTest(Ethereum.USDC);
-        _approveTest(Ethereum.USDE);
-        _approveTest(Ethereum.USDS);
-        _approveTest(Ethereum.USCC);
-        _approveTest(Ethereum.USDT);
-        _approveTest(Ethereum.USTB);
-        _approveTest(Ethereum.WBTC);
-        _approveTest(Ethereum.WEETH);
-        _approveTest(Ethereum.WETH);
-        _approveTest(Ethereum.WSTETH);
-    }
-
-    function test_approve_returningFalseOnExistingAllowance() external {
+    function test_approveReturningFalseOnExistingAllowance() public {
         ERC20ApproveFalseExistingAllowance mock = new ERC20ApproveFalseExistingAllowance("Mock", "MOCK");
-        _approveTest(address(mock));
+        _approveTest(address(mock), harness);
+        _approveCurveTest(address(mock), harness);
     }
 
-    function test_approve_returningFalseOnNonZeroAmount() external {
+}
+
+contract ERC20ApproveReturningFalseNonZeroAmountMainnetTest is MainnetControllerApproveSuccessTests {
+
+    function test_approveReturningFalseOnNonZeroAmount() public {
         ERC20ApproveFalseNonZeroAmount mock = new ERC20ApproveFalseNonZeroAmount("Mock", "MOCK");
 
-        vm.expectRevert("ApproveLib/approve-failed");
-        harness.approve(address(mock), makeAddr("spender"), 100);
+        vm.expectRevert("MC/approve-failed");
+        IHarness(harness).approve(address(mock), makeAddr("spender"), 100);
+
+        vm.expectRevert("MC/approve-failed");
+        IHarness(harness).approveCurve(address(almProxy), address(mock), makeAddr("spender"), 100);
+    }
+
+}
+
+contract ERC20ApproveReturningFalseExistingAllowanceForeignTest is ForeignControllerApproveSuccessTests {
+
+    function test_approveCustom() public {
+        ERC20ApproveFalseExistingAllowance mock = new ERC20ApproveFalseExistingAllowance("Mock", "MOCK");
+        _approveTest(address(mock), harness);
+    }
+
+}
+
+contract ERC20ApproveReturningFalseNonZeroAmountForeignTest is ForeignControllerApproveSuccessTests {
+
+    function test_approveReturningFalseOnNonZeroAmount() public {
+        ERC20ApproveFalseNonZeroAmount mock = new ERC20ApproveFalseNonZeroAmount("Mock", "MOCK");
+
+        vm.expectRevert("FC/approve-failed");
+        IHarness(harness).approve(address(mock), makeAddr("spender"), 100);
     }
 
 }

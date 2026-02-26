@@ -1,26 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity ^0.8.21;
+pragma solidity >=0.8.0;
 
 import { ReentrancyGuard } from "../../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
-import { Ethereum } from "../../lib/spark-address-registry/src/Ethereum.sol";
+import "./ForkTestBase.t.sol";
 
-import { makeAddressKey } from "../../src/RateLimitHelpers.sol";
-import { RateLimits }     from "../../src/RateLimits.sol";
-
-import { ForkTestBase } from "./ForkTestBase.t.sol";
-
-interface IERC20Like {
-
+interface IFarmLike {
     function balanceOf(address account) external view returns (uint256);
-
 }
 
-abstract contract Farm_TestBase is ForkTestBase {
+contract MainnetControllerFarmTestBase is ForkTestBase {
 
-    address internal constant FARM = 0x173e314C7635B45322cd8Cb14f44b312e079F3af;  // USDS SPK farm
-
-    IERC20Like internal constant USDS = IERC20Like(Ethereum.USDS);
+    address farm = 0x173e314C7635B45322cd8Cb14f44b312e079F3af;  // USDS SPK farm
 
     function setUp() public virtual override {
         super.setUp();
@@ -28,13 +19,18 @@ abstract contract Farm_TestBase is ForkTestBase {
         vm.startPrank(Ethereum.SPARK_PROXY);
 
         rateLimits.setRateLimitData(
-            makeAddressKey(mainnetController.LIMIT_FARM_DEPOSIT(), FARM),
+            RateLimitHelpers.makeAddressKey(
+                mainnetController.LIMIT_FARM_DEPOSIT(),
+                farm
+            ),
             10_000_000e18,
             uint256(1_000_000e18) / 1 days
         );
-
         rateLimits.setRateLimitData(
-            makeAddressKey(mainnetController.LIMIT_FARM_WITHDRAW(), FARM),
+            RateLimitHelpers.makeAddressKey(
+                mainnetController.LIMIT_FARM_WITHDRAW(),
+                farm
+            ),
             10_000_000e18,
             uint256(1_000_000e6) / 1 days
         );
@@ -48,12 +44,12 @@ abstract contract Farm_TestBase is ForkTestBase {
 
 }
 
-contract MainnetController_Farm_Deposit_Tests is Farm_TestBase {
+contract MainnetControllerFarmDepositFailureTests is MainnetControllerFarmTestBase {
 
     function test_depositToFarm_reentrancy() external {
         _setControllerEntered();
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        mainnetController.depositToFarm(FARM, 1_000_000e18);
+        mainnetController.depositToFarm(farm, 1_000_000e18);
     }
 
     function test_depositToFarm_notRelayer() external {
@@ -62,62 +58,72 @@ contract MainnetController_Farm_Deposit_Tests is Farm_TestBase {
             address(this),
             RELAYER
         ));
-        mainnetController.depositToFarm(FARM, 1_000_000e18);
+        mainnetController.depositToFarm(farm, 1_000_000e18);
     }
 
     function test_depositToFarm_zeroMaxAmount() external {
-        vm.expectRevert("RateLimits/zero-maxAmount");
         vm.prank(relayer);
+        vm.expectRevert("RateLimits/zero-maxAmount");
         mainnetController.depositToFarm(makeAddr("fake-farm"), 0);
     }
 
     function test_depositToFarm_rateLimitsBoundary() external {
-        bytes32 key = makeAddressKey(mainnetController.LIMIT_FARM_DEPOSIT(), FARM);
+        bytes32 key = RateLimitHelpers.makeAddressKey(
+            mainnetController.LIMIT_FARM_DEPOSIT(),
+            farm
+        );
 
         vm.prank(Ethereum.SPARK_PROXY);
         rateLimits.setRateLimitData(key, 1_000_000e18, uint256(1_000_000e18) / 1 days);
 
-        deal(Ethereum.USDS, address(almProxy), 1_000_000e18);
+        deal(address(usds), address(almProxy), 1_000_000e18);
 
+        vm.prank(relayer);
         vm.expectRevert("RateLimits/rate-limit-exceeded");
-        vm.prank(relayer);
-        mainnetController.depositToFarm(FARM, 1_000_000e18 + 1);
+        mainnetController.depositToFarm(farm, 1_000_000e18 + 1);
 
         vm.prank(relayer);
-        mainnetController.depositToFarm(FARM, 1_000_000e18);
+        mainnetController.depositToFarm(farm, 1_000_000e18);
     }
 
-    function test_depositToFarm() external {
-        bytes32 depositKey = makeAddressKey(mainnetController.LIMIT_FARM_DEPOSIT(), FARM);
+}
 
-        deal(Ethereum.USDS, address(almProxy), 1_000_000e18);
+contract MainnetControllerFarmDepositSuccessTests is MainnetControllerFarmTestBase {
+
+    function test_depositToFarm() external {
+        bytes32 depositKey = RateLimitHelpers.makeAddressKey(
+            mainnetController.LIMIT_FARM_DEPOSIT(),
+            farm
+        );
+
+        deal(address(usds), address(almProxy), 1_000_000e18);
 
         assertEq(rateLimits.getCurrentRateLimit(depositKey), 10_000_000e18);
 
-        assertEq(USDS.balanceOf(address(almProxy)),             1_000_000e18);
-        assertEq(IERC20Like(FARM).balanceOf(address(almProxy)), 0);
+        assertEq(usds.balanceOf(address(almProxy)),            1_000_000e18);
+        assertEq(IFarmLike(farm).balanceOf(address(almProxy)), 0);
 
         vm.record();
 
         vm.prank(relayer);
-        mainnetController.depositToFarm(FARM, 1_000_000e18);
+        mainnetController.depositToFarm(farm, 1_000_000e18);
 
         _assertReentrancyGuardWrittenToTwice();
 
         assertEq(rateLimits.getCurrentRateLimit(depositKey), 9_000_000e18);
 
-        assertEq(USDS.balanceOf(address(almProxy)),             0);
-        assertEq(IERC20Like(FARM).balanceOf(address(almProxy)), 1_000_000e18);
+        assertEq(usds.balanceOf(address(almProxy)),            0);
+        assertEq(IFarmLike(farm).balanceOf(address(almProxy)), 1_000_000e18);
     }
 
 }
 
-contract MainnetController_Farm_Withdraw_Tests is Farm_TestBase {
+contract MainnetControllerFarmWithdrawFailureTests is MainnetControllerFarmTestBase {
 
     function test_withdrawFromFarm_reentrancy() external {
         _setControllerEntered();
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        mainnetController.withdrawFromFarm(FARM, 1_000_000e18);
+        mainnetController.withdrawFromFarm(farm, 1_000_000e18);
     }
 
     function test_withdrawFromFarm_notRelayer() external {
@@ -126,62 +132,72 @@ contract MainnetController_Farm_Withdraw_Tests is Farm_TestBase {
             address(this),
             RELAYER
         ));
-        mainnetController.withdrawFromFarm(FARM, 1_000_000e18);
+        mainnetController.withdrawFromFarm(farm, 1_000_000e18);
     }
 
     function test_withdrawFromFarm_zeroMaxAmount() external {
-        vm.expectRevert("RateLimits/zero-maxAmount");
         vm.prank(relayer);
+        vm.expectRevert("RateLimits/zero-maxAmount");
         mainnetController.withdrawFromFarm(makeAddr("fake-farm"), 0);
     }
 
     function test_withdrawFromFarm_rateLimitsBoundary() external {
-        bytes32 key = makeAddressKey(mainnetController.LIMIT_FARM_WITHDRAW(), FARM);
+        bytes32 key = RateLimitHelpers.makeAddressKey(
+            mainnetController.LIMIT_FARM_WITHDRAW(),
+            farm
+        );
 
         vm.prank(Ethereum.SPARK_PROXY);
         rateLimits.setRateLimitData(key, 1_000_000e18, uint256(1_000_000e18) / 1 days);
 
-        deal(Ethereum.USDS, address(almProxy), 1_000_000e18);
+        deal(address(usds), address(almProxy), 1_000_000e18);
 
         vm.startPrank(relayer);
 
-        mainnetController.depositToFarm(FARM, 1_000_000e18);
+        mainnetController.depositToFarm(farm, 1_000_000e18);
 
         vm.expectRevert("RateLimits/rate-limit-exceeded");
-        mainnetController.withdrawFromFarm(FARM, 1_000_000e18 + 1);
+        mainnetController.withdrawFromFarm(farm, 1_000_000e18 + 1);
 
-        mainnetController.withdrawFromFarm(FARM, 1_000_000e18);
+        mainnetController.withdrawFromFarm(farm, 1_000_000e18);
 
         vm.stopPrank();
     }
 
-    function test_withdrawFromFarm() external {
-        bytes32 withdrawKey = makeAddressKey(mainnetController.LIMIT_FARM_WITHDRAW(), FARM);
+}
 
-        deal(Ethereum.USDS, address(almProxy), 1_000_000e18);
+contract MainnetControllerFarmWithdrawSuccessTests is MainnetControllerFarmTestBase {
+
+    function test_withdrawFromFarm() external {
+        bytes32 withdrawKey = RateLimitHelpers.makeAddressKey(
+            mainnetController.LIMIT_FARM_WITHDRAW(),
+            farm
+        );
+
+        deal(address(usds), address(almProxy), 1_000_000e18);
         vm.prank(relayer);
-        mainnetController.depositToFarm(FARM, 1_000_000e18);
+        mainnetController.depositToFarm(farm, 1_000_000e18);
 
         assertEq(rateLimits.getCurrentRateLimit(withdrawKey), 10_000_000e18);
 
-        assertEq(USDS.balanceOf(address(almProxy)),                     0);
-        assertEq(IERC20Like(FARM).balanceOf(address(almProxy)),         1_000_000e18);
-        assertEq(IERC20Like(Ethereum.SPK).balanceOf(address(almProxy)), 0);
+        assertEq(usds.balanceOf(address(almProxy)),                 0);
+        assertEq(IFarmLike(farm).balanceOf(address(almProxy)),      1_000_000e18);
+        assertEq(IERC20(Ethereum.SPK).balanceOf(address(almProxy)), 0);
 
         skip(1 days);
 
         vm.record();
 
         vm.prank(relayer);
-        mainnetController.withdrawFromFarm(FARM, 1_000_000e18);
+        mainnetController.withdrawFromFarm(farm, 1_000_000e18);
 
         _assertReentrancyGuardWrittenToTwice();
 
         assertEq(rateLimits.getCurrentRateLimit(withdrawKey), 9_000_000e18);
 
-        assertEq(USDS.balanceOf(address(almProxy)),                     1_000_000e18);
-        assertEq(IERC20Like(FARM).balanceOf(address(almProxy)),         0);
-        assertEq(IERC20Like(Ethereum.SPK).balanceOf(address(almProxy)), 2930.857045118398e18);
+        assertEq(usds.balanceOf(address(almProxy)),                 1_000_000e18);
+        assertEq(IFarmLike(farm).balanceOf(address(almProxy)),      0);
+        assertEq(IERC20(Ethereum.SPK).balanceOf(address(almProxy)), 2930.857045118398e18);
     }
 
 }

@@ -1,18 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity ^0.8.21;
+pragma solidity >=0.8.0;
 
 import { ControllerInstance }      from "../../deploy/ControllerInstance.sol";
 import { ForeignControllerDeploy } from "../../deploy/ControllerDeploy.sol";
 
-import { Base } from "../../lib/spark-address-registry/src/Base.sol";
+import "./ForkTestBase.t.sol";
 
-import { ALMProxy }          from "../../src/ALMProxy.sol";
-import { ForeignController } from "../../src/ForeignController.sol";
-import { RateLimits }        from "../../src/RateLimits.sol";
-
-import { ForkTestBase } from "./ForkTestBase.t.sol";
-
-contract ForeignController_Deploy_SuccessTests is ForkTestBase {
+contract ForeignControllerDeploySuccessTests is ForkTestBase {
 
     function test_deployFull() external {
         // Perform new deployments against existing fork environment

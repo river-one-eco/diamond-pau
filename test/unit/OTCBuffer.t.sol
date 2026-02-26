@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.21;
 
-import { ERC1967Proxy } from "../../lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import { ERC20Mock }    from "../../lib/openzeppelin-contracts/contracts/mocks/token/ERC20Mock.sol";
+import { ERC1967Proxy } from "openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import { ERC20Mock }    from "openzeppelin-contracts/contracts/mocks/token/ERC20Mock.sol";
 
-import { OTCBuffer } from "../../src/OTCBuffer.sol";
+import { OTCBuffer } from "src/OTCBuffer.sol";
 
 import { UnitTestBase } from "./UnitTestBase.t.sol";
 
-abstract contract OTCBuffer_TestBase is UnitTestBase {
+contract OTCBufferTestBase is UnitTestBase {
 
-    OTCBuffer internal buffer;
-    ERC20Mock internal usdt;
+    OTCBuffer public buffer;
+    ERC20Mock public usdt;
 
-    address internal almProxy = makeAddr("almProxy");
+    address almProxy = makeAddr("almProxy");
 
     function setUp() public {
         buffer = OTCBuffer(
@@ -33,9 +33,9 @@ abstract contract OTCBuffer_TestBase is UnitTestBase {
 
 }
 
-contract OTCBuffer_Initialize_Tests is OTCBuffer_TestBase {
+contract OTCBufferInitializeTests is OTCBufferTestBase {
 
-    function test_initialize_invalidAdmin() external {
+    function test_initialize_invalidAdmin() public {
         address otcBuffer = address(new OTCBuffer());
 
         vm.expectRevert("OTCBuffer/invalid-admin");
@@ -48,7 +48,7 @@ contract OTCBuffer_Initialize_Tests is OTCBuffer_TestBase {
         );
     }
 
-    function test_initialize_invalidAlmProxy() external {
+    function test_initialize_invalidAlmProxy() public {
         address otcBuffer = address(new OTCBuffer());
 
         vm.expectRevert("OTCBuffer/invalid-alm-proxy");
@@ -61,19 +61,19 @@ contract OTCBuffer_Initialize_Tests is OTCBuffer_TestBase {
         );
     }
 
-    function test_initialize_cannotInitializeTwice() external {
+    function test_initialize_cannotInitializeTwice() public {
         vm.expectRevert("InvalidInitialization()");
         buffer.initialize(admin, almProxy);
     }
 
-    function test_initialize_cannotInitializeImplementation() external {
+    function test_initialize_cannotInitializeImplementation() public {
         OTCBuffer newBuffer = new OTCBuffer();
 
         vm.expectRevert("InvalidInitialization()");
         newBuffer.initialize(admin, almProxy);
     }
 
-    function test_initialize() external {
+    function test_initialize() public {
         address newAdmin = makeAddr("new-admin");
 
         OTCBuffer newBuffer = OTCBuffer(
@@ -94,9 +94,9 @@ contract OTCBuffer_Initialize_Tests is OTCBuffer_TestBase {
 
 }
 
-contract OTCBuffer_Approve_Tests is OTCBuffer_TestBase {
+contract OTCBufferApproveFailureTests is OTCBufferTestBase {
 
-    function test_approve_notAuthorized() external {
+    function test_approve_notAuthorized() public {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
@@ -105,7 +105,11 @@ contract OTCBuffer_Approve_Tests is OTCBuffer_TestBase {
         buffer.approve(address(usdt), 1_000_000e6);
     }
 
-    function test_approve() external {
+}
+
+contract OTCBufferApproveSuccessTests is OTCBufferTestBase {
+
+    function test_approve() public {
         assertEq(usdt.allowance(address(buffer), almProxy), 0);
 
         vm.prank(admin);

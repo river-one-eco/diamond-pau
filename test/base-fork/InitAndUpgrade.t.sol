@@ -1,24 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity ^0.8.21;
+pragma solidity >=0.8.0;
 
-import { ERC20Mock } from "../../lib/openzeppelin-contracts/contracts/mocks/token/ERC20Mock.sol";
+import "../../test/base-fork/ForkTestBase.t.sol";
 
-import { Base } from "../../lib/spark-address-registry/src/Base.sol";
+import { CCTPForwarder } from "xchain-helpers/forwarders/CCTPForwarder.sol";
 
-import { PSM3Deploy } from "../../lib/spark-psm/deploy/PSM3Deploy.sol";
-import { IPSM3 }      from "../../lib/spark-psm/src/PSM3.sol";
+import { ControllerInstance }      from "../../deploy/ControllerInstance.sol";
+import { ForeignControllerDeploy } from "../../deploy/ControllerDeploy.sol";
 
-import { CCTPForwarder } from "../../lib/xchain-helpers/src/forwarders/CCTPForwarder.sol";
-
-import { ControllerInstance }            from "../../deploy/ControllerInstance.sol";
-import { ForeignControllerDeploy }       from "../../deploy/ControllerDeploy.sol";
 import { ForeignControllerInit as Init } from "../../deploy/ForeignControllerInit.sol";
-
-import { ALMProxy }          from "../../src/ALMProxy.sol";
-import { ForeignController } from "../../src/ForeignController.sol";
-import { RateLimits }        from "../../src/RateLimits.sol";
-
-import { ForkTestBase } from "./ForkTestBase.t.sol";
 
 // Necessary to get error message assertions to work
 contract LibraryWrapper {
@@ -53,13 +43,12 @@ contract LibraryWrapper {
 
 }
 
-abstract contract InitAndUpgrade_TestBase is ForkTestBase {
+contract ForeignControllerInitAndUpgradeTestBase is ForkTestBase {
 
     uint32 constant destinationEndpointId = 30101;  // Ethereum EID
 
     function _getDefaultParams()
-        internal
-        returns (
+        internal returns (
             Init.ConfigAddressParams  memory configAddresses,
             Init.CheckAddressParams   memory checkAddresses,
             Init.MintRecipient[]      memory mintRecipients,
@@ -109,7 +98,7 @@ abstract contract InitAndUpgrade_TestBase is ForkTestBase {
 
 }
 
-contract ForeignController_InitAndUpgrade_FailureTests is InitAndUpgrade_TestBase {
+contract ForeignControllerInitAndUpgradeFailureTest is ForeignControllerInitAndUpgradeTestBase {
 
     // NOTE: `initAlmSystem` and `upgradeController` are tested in the same contract because
     //       they both use _initController and have similar specific setups, so it
@@ -148,7 +137,7 @@ contract ForeignController_InitAndUpgrade_FailureTests is InitAndUpgrade_TestBas
 
         Init.MintRecipient[] memory mintRecipients_ = new Init.MintRecipient[](1);
 
-        ( configAddresses, checkAddresses, mintRecipients_, , ) = _getDefaultParams();
+        ( configAddresses, checkAddresses, mintRecipients_,, ) = _getDefaultParams();
 
         // NOTE: This would need to be refactored to a for loop if more than one recipient
         mintRecipients.push(mintRecipients_[0]);
@@ -310,7 +299,7 @@ contract ForeignController_InitAndUpgrade_FailureTests is InitAndUpgrade_TestBas
         controllerInst = ForeignControllerDeploy.deployFull(
             SPARK_EXECUTOR,
             address(psmBase),
-            Base.USDC,
+            USDC_BASE,
             CCTP_MESSENGER_BASE
         );
 
@@ -326,14 +315,14 @@ contract ForeignController_InitAndUpgrade_FailureTests is InitAndUpgrade_TestBas
 
         // Deploy a new PSM with the wrong USDS
         psmBase = IPSM3(PSM3Deploy.deploy(
-            SPARK_EXECUTOR, Base.USDC, address(wrongUsds), address(susdsBase), SSR_ORACLE
+            SPARK_EXECUTOR, USDC_BASE, address(wrongUsds), address(susdsBase), SSR_ORACLE
         ));
 
         // Deploy a new controller pointing to misconfigured PSM
         controllerInst = ForeignControllerDeploy.deployFull(
             SPARK_EXECUTOR,
             address(psmBase),
-            Base.USDC,
+            USDC_BASE,
             CCTP_MESSENGER_BASE
         );
 
@@ -349,14 +338,14 @@ contract ForeignController_InitAndUpgrade_FailureTests is InitAndUpgrade_TestBas
 
         // Deploy a new PSM with the wrong SUSDS
         psmBase = IPSM3(PSM3Deploy.deploy(
-            SPARK_EXECUTOR, Base.USDC, address(usdsBase), address(wrongSUsds), SSR_ORACLE
+            SPARK_EXECUTOR, USDC_BASE, address(usdsBase), address(wrongSUsds), SSR_ORACLE
         ));
 
         // Deploy a new controller pointing to misconfigured PSM
         controllerInst = ForeignControllerDeploy.deployFull(
             SPARK_EXECUTOR,
             address(psmBase),
-            Base.USDC,
+            USDC_BASE,
             CCTP_MESSENGER_BASE
         );
 
@@ -484,7 +473,7 @@ contract ForeignController_InitAndUpgrade_FailureTests is InitAndUpgrade_TestBas
 
 }
 
-contract ForeignController_InitAlmSystem_SuccessTests is InitAndUpgrade_TestBase {
+contract ForeignControllerInitAlmSystemSuccessTests is ForeignControllerInitAndUpgradeTestBase {
 
     LibraryWrapper wrapper;
 
@@ -596,7 +585,7 @@ contract ForeignController_InitAlmSystem_SuccessTests is InitAndUpgrade_TestBase
 
 }
 
-contract ForeignController_UpgradeController_SuccessTests is InitAndUpgrade_TestBase {
+contract ForeignControllerUpgradeControllerSuccessTests is ForeignControllerInitAndUpgradeTestBase {
 
     LibraryWrapper wrapper;
 

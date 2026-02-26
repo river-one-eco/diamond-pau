@@ -3,19 +3,19 @@ pragma solidity ^0.8.21;
 
 import { ERC1967Proxy } from "../../lib/openzeppelin-contracts/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-import { WEETHModule } from "../../src/WEETHModule.sol";
+import { WEETHModule } from "src/WEETHModule.sol";
 
 import { UnitTestBase } from "./UnitTestBase.t.sol";
 
-abstract contract WEETHModule_TestBase is UnitTestBase {
+contract WEETHModuleTestBase is UnitTestBase {
 
-    address internal almProxy = makeAddr("almProxy");
+    address almProxy = makeAddr("almProxy");
 
 }
 
-contract WEETHModule_Initialize_Tests is WEETHModule_TestBase {
+contract WEETHModuleInitializeTest is WEETHModuleTestBase {
 
-    function test_initialize_invalidAdmin() external {
+    function test_initialize_invalidAdmin() public {
         address implementation = address(new WEETHModule());
 
         vm.expectRevert("WEETHModule/invalid-admin");
@@ -28,7 +28,7 @@ contract WEETHModule_Initialize_Tests is WEETHModule_TestBase {
         );
     }
 
-    function test_initialize_invalidAlmProxy() external {
+    function test_initialize_invalidAlmProxy() public {
         address implementation = address(new WEETHModule());
 
         vm.expectRevert("WEETHModule/invalid-alm-proxy");
@@ -41,7 +41,7 @@ contract WEETHModule_Initialize_Tests is WEETHModule_TestBase {
         );
     }
 
-    function test_initialize_cannotInitializeAgain() external {
+    function test_initialize_cannotInitializeAgain() public {
         WEETHModule weethModule = WEETHModule(
             payable(
                 address(
@@ -60,14 +60,14 @@ contract WEETHModule_Initialize_Tests is WEETHModule_TestBase {
         weethModule.initialize(admin, almProxy);
     }
 
-    function test_initialize_cannotInitializeImplementation() external {
+    function test_initialize_cannotInitializeImplementation() public {
         WEETHModule implementation = new WEETHModule();
 
         vm.expectRevert("InvalidInitialization()");
         implementation.initialize(admin, almProxy);
     }
 
-    function test_initialize_success() external {
+    function test_initialize_success() public {
         WEETHModule weethModule = WEETHModule(
             payable(
                 address(

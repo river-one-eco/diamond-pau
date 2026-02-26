@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.21;
 
+import "../UnitTestBase.t.sol";
+
 import { RateLimits, IRateLimits } from "../../../src/RateLimits.sol";
 import { RateLimitHelpers }        from "../../../src/RateLimitHelpers.sol";
-
-import { UnitTestBase } from "../UnitTestBase.t.sol";
 
 contract RateLimitHelpersWrapper {
 
@@ -22,7 +22,7 @@ contract RateLimitHelpersWrapper {
 
 }
 
-abstract contract RateLimitHelpers_TestBase is UnitTestBase {
+contract RateLimitHelpersTestBase is UnitTestBase {
 
     bytes32 constant KEY  = "KEY";
     string  constant NAME = "NAME";
@@ -57,7 +57,7 @@ abstract contract RateLimitHelpers_TestBase is UnitTestBase {
 
 }
 
-contract RateLimitHelpers_PureFunction_Tests is RateLimitHelpers_TestBase {
+contract RateLimitHelpersPureFunctionTests is RateLimitHelpersTestBase {
 
     function test_makeAddressKey() public view {
         assertEq(

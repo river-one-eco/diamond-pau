@@ -9,9 +9,9 @@ import { MockPSM }     from "../mocks/MockPSM.sol";
 import { MockPSM3 }    from "../mocks/MockPSM3.sol";
 import { MockVault }   from "../mocks/MockVault.sol";
 
-import { UnitTestBase } from "../UnitTestBase.t.sol";
+import "../UnitTestBase.t.sol";
 
-contract MainnetController_Constructor_Tests is UnitTestBase {
+contract MainnetControllerConstructorTests is UnitTestBase {
 
     function test_constructor() public {
         MockDaiUsds daiUsds = new MockDaiUsds(makeAddr("dai"));
@@ -46,7 +46,7 @@ contract MainnetController_Constructor_Tests is UnitTestBase {
 
 }
 
-contract ForeignController_Constructor_Tests is UnitTestBase {
+contract ForeignControllerConstructorTests is UnitTestBase {
 
     address almProxy   = makeAddr("almProxy");
     address rateLimits = makeAddr("rateLimits");

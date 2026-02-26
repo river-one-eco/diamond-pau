@@ -11,9 +11,9 @@ import { MockPSM }     from "../mocks/MockPSM.sol";
 import { MockPSM3 }    from "../mocks/MockPSM3.sol";
 import { MockVault }   from "../mocks/MockVault.sol";
 
-import { UnitTestBase } from "../UnitTestBase.t.sol";
+import "../UnitTestBase.t.sol";
 
-contract MainnetController_RemoveRelayer_Tests is UnitTestBase {
+contract MainnetControllerRemoveRelayerTests is UnitTestBase {
 
     MainnetController controller;
 
@@ -96,7 +96,7 @@ contract MainnetController_RemoveRelayer_Tests is UnitTestBase {
 
 }
 
-contract ForeignController_RemoveRelayer_Tests is UnitTestBase {
+contract ForeignControllerRemoveRelayerTests is UnitTestBase {
 
     ForeignController controller;
 

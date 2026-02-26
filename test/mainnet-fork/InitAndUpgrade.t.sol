@@ -1,33 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity ^0.8.21;
+pragma solidity >=0.8.0;
 
-import { Ethereum } from "../../lib/spark-address-registry/src/Ethereum.sol";
+import "test/mainnet-fork/ForkTestBase.t.sol";
 
-import { CCTPForwarder } from "../../lib/xchain-helpers/src/forwarders/CCTPForwarder.sol";
+import { IRateLimits } from "src/interfaces/IRateLimits.sol";
 
-import { ControllerInstance }            from "../../deploy/ControllerInstance.sol";
-import { MainnetControllerDeploy }       from "../../deploy/ControllerDeploy.sol";
+import { ControllerInstance }      from "../../deploy/ControllerInstance.sol";
+import { MainnetControllerDeploy } from "../../deploy/ControllerDeploy.sol";
+
 import { MainnetControllerInit as Init } from "../../deploy/MainnetControllerInit.sol";
-
-import { ALMProxy }          from "../../src/ALMProxy.sol";
-import { MainnetController } from "../../src/MainnetController.sol";
-import { RateLimits }        from "../../src/RateLimits.sol";
-
-import { ForkTestBase } from "./ForkTestBase.t.sol";
-
-interface IPSMLike {
-
-    function bud(address) external view returns (uint256);
-
-}
-
-interface IVaultLike {
-
-    function rely(address) external;
-
-    function wards(address) external returns (uint256);
-
-}
 
 // Necessary to get error message assertions to work
 contract LibraryWrapper {
@@ -82,7 +63,7 @@ contract LibraryWrapper {
 
 }
 
-abstract contract InitAndUpgrade_TestBase is ForkTestBase {
+contract MainnetControllerInitAndUpgradeTestBase is ForkTestBase {
 
     uint32 constant destinationEndpointId = 30110;  // Arbitrum EID
 
@@ -138,7 +119,7 @@ abstract contract InitAndUpgrade_TestBase is ForkTestBase {
 
 }
 
-contract MainnetController_InitAndUpgrade_FailureTests is InitAndUpgrade_TestBase {
+contract MainnetControllerInitAndUpgradeFailureTest is MainnetControllerInitAndUpgradeTestBase {
 
     // NOTE: `initAlmSystem` and `upgradeController` are tested in the same contract because
     //       they both use _initController and have similar specific setups, so it
@@ -180,7 +161,7 @@ contract MainnetController_InitAndUpgrade_FailureTests is InitAndUpgrade_TestBas
 
         Init.MintRecipient[] memory mintRecipients_ = new Init.MintRecipient[](1);
 
-        ( configAddresses, checkAddresses, mintRecipients_, , ) = _getDefaultParams();
+        ( configAddresses, checkAddresses, mintRecipients_,, ) = _getDefaultParams();
 
         // NOTE: This would need to be refactored to a for loop if more than one recipient
         mintRecipients.push(mintRecipients_[0]);
@@ -377,7 +358,7 @@ contract MainnetController_InitAndUpgrade_FailureTests is InitAndUpgrade_TestBas
 
 }
 
-contract MainnetController_InitAlmSystem_SuccessTests is InitAndUpgrade_TestBase {
+contract MainnetControllerInitAlmSystemSuccessTests is MainnetControllerInitAndUpgradeTestBase {
 
     LibraryWrapper wrapper;
 
@@ -523,7 +504,7 @@ contract MainnetController_InitAlmSystem_SuccessTests is InitAndUpgrade_TestBase
 
 }
 
-contract MainnetController_UpgradeController_SuccessTests is InitAndUpgrade_TestBase {
+contract MainnetControllerUpgradeControllerSuccessTests is MainnetControllerInitAndUpgradeTestBase {
 
     LibraryWrapper wrapper;
 
