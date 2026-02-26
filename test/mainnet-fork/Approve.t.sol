@@ -85,6 +85,47 @@ contract ForeignControllerHarness is ForeignController {
         _approve(token, spender, amount);
     }
 
+    /**********************************************************************************************/
+    /*** Internal helper functions                                                              ***/
+    /**********************************************************************************************/
+
+    // NOTE: This logic was inspired by OpenZeppelin's forceApprove in SafeERC20 library
+    function _approve(address token, address spender, uint256 amount) internal {
+        bytes memory approveData = abi.encodeCall(IERC20.approve, (spender, amount));
+
+        // Call doCall on proxy to approve the token
+        ( bool success, bytes memory data )
+            = address(proxy).call(abi.encodeCall(IALMProxy.doCall, (token, approveData)));
+
+        bytes memory approveCallReturnData;
+
+        if (success) {
+            // Data is the ABI-encoding of the approve call bytes return data, need to
+            // decode it first
+            approveCallReturnData = abi.decode(data, (bytes));
+            // Approve was successful if 1) no return value or 2) true return value
+            if (
+                approveCallReturnData.length == 0 ||
+                (approveCallReturnData.length == 32 && abi.decode(approveCallReturnData, (bool)))
+            ) {
+                return;
+            }
+        }
+
+        // If call was unsuccessful, set to zero and try again
+        proxy.doCall(token, abi.encodeCall(IERC20.approve, (spender, 0)));
+
+        approveCallReturnData = proxy.doCall(token, approveData);
+
+        // Revert if approve returns false
+        require(
+            approveCallReturnData.length == 0 ||
+            (approveCallReturnData.length == 32 && abi.decode(approveCallReturnData, (bool))
+        ),
+            "FC/approve-failed"
+        );
+    }
+
 }
 
 contract ApproveTestBase is ForkTestBase {

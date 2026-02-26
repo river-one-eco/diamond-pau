@@ -9,6 +9,12 @@ import { ReentrancyGuard } from "../../../lib/openzeppelin-contracts/contracts/u
 import { ForeignController } from "../../../src/ForeignController.sol";
 import { MainnetController } from "../../../src/MainnetController.sol";
 
+import { CCTPLib }      from "../../../src/libraries/CCTPLib.sol";
+import { ERC4626Lib }   from "../../../src/libraries/ERC4626Lib.sol";
+import { LayerZeroLib } from "../../../src/libraries/LayerZeroLib.sol";
+import { OTCLib }       from "../../../src/libraries/OTCLib.sol";
+import { UniswapV4Lib } from "../../../src/libraries/UniswapV4Lib.sol";
+
 import { MockDaiUsds } from "../mocks/MockDaiUsds.sol";
 import { MockPSM }     from "../mocks/MockPSM.sol";
 import { MockVault }   from "../mocks/MockVault.sol";
@@ -81,14 +87,14 @@ contract MainnetControllerSetMintRecipientTests is MainnetControllerAdminTestBas
 
         vm.prank(admin);
         vm.expectEmit(address(mainnetController));
-        emit MainnetController.MintRecipientSet(1, mintRecipient1);
+        emit CCTPLib.MintRecipientSet(1, mintRecipient1);
         mainnetController.setMintRecipient(1, mintRecipient1);
 
         assertEq(mainnetController.mintRecipients(1), mintRecipient1);
 
         vm.prank(admin);
         vm.expectEmit(address(mainnetController));
-        emit MainnetController.MintRecipientSet(2, mintRecipient2);
+        emit CCTPLib.MintRecipientSet(2, mintRecipient2);
         mainnetController.setMintRecipient(2, mintRecipient2);
 
         assertEq(mainnetController.mintRecipients(2), mintRecipient2);
@@ -97,7 +103,7 @@ contract MainnetControllerSetMintRecipientTests is MainnetControllerAdminTestBas
 
         vm.prank(admin);
         vm.expectEmit(address(mainnetController));
-        emit MainnetController.MintRecipientSet(1, mintRecipient2);
+        emit CCTPLib.MintRecipientSet(1, mintRecipient2);
         mainnetController.setMintRecipient(1, mintRecipient2);
 
         assertEq(mainnetController.mintRecipients(1), mintRecipient2);
@@ -138,14 +144,14 @@ contract MainnetControllerSetLayerZeroRecipientTests is MainnetControllerAdminTe
 
         vm.prank(admin);
         vm.expectEmit(address(mainnetController));
-        emit MainnetController.LayerZeroRecipientSet(1, layerZeroRecipient1);
+        emit LayerZeroLib.LayerZeroRecipientSet(1, layerZeroRecipient1);
         mainnetController.setLayerZeroRecipient(1, layerZeroRecipient1);
 
         assertEq(mainnetController.layerZeroRecipients(1), layerZeroRecipient1);
 
         vm.prank(admin);
         vm.expectEmit(address(mainnetController));
-        emit MainnetController.LayerZeroRecipientSet(2, layerZeroRecipient2);
+        emit LayerZeroLib.LayerZeroRecipientSet(2, layerZeroRecipient2);
         mainnetController.setLayerZeroRecipient(2, layerZeroRecipient2);
 
         assertEq(mainnetController.layerZeroRecipients(2), layerZeroRecipient2);
@@ -154,7 +160,7 @@ contract MainnetControllerSetLayerZeroRecipientTests is MainnetControllerAdminTe
 
         vm.prank(admin);
         vm.expectEmit(address(mainnetController));
-        emit MainnetController.LayerZeroRecipientSet(1, layerZeroRecipient2);
+        emit LayerZeroLib.LayerZeroRecipientSet(1, layerZeroRecipient2);
         mainnetController.setLayerZeroRecipient(1, layerZeroRecipient2);
 
         assertEq(mainnetController.layerZeroRecipients(1), layerZeroRecipient2);
@@ -268,7 +274,7 @@ contract MainnetControllerSetOTCBufferTests is MainnetControllerAdminTestBase {
 
         vm.prank(admin);
         vm.expectEmit(address(mainnetController));
-        emit MainnetController.OTCBufferSet(exchange, address(0), address(otcBuffer));
+        emit OTCLib.OTCBufferSet(exchange, address(otcBuffer));
         mainnetController.setOTCBuffer(exchange, address(otcBuffer));
 
         _assertReentrancyGuardWrittenToTwice();
@@ -313,7 +319,7 @@ contract MainnetControllerSetOTCRechargeRateTests is MainnetControllerAdminTestB
 
         vm.prank(admin);
         vm.expectEmit(address(mainnetController));
-        emit MainnetController.OTCRechargeRateSet(exchange, 0, uint256(1_000_000e18) / 1 days);
+        emit OTCLib.OTCRechargeRateSet(exchange, uint256(1_000_000e18) / 1 days);
         mainnetController.setOTCRechargeRate(exchange, uint256(1_000_000e18) / 1 days);
 
         _assertReentrancyGuardWrittenToTwice();
@@ -368,7 +374,7 @@ contract MainnetControllerSetOTCWhitelistedAssetTests is MainnetControllerAdminT
         mainnetController.setOTCBuffer(exchange, asset);
 
         vm.expectEmit(address(mainnetController));
-        emit MainnetController.OTCWhitelistedAssetSet(exchange, asset, true);
+        emit OTCLib.OTCWhitelistedAssetSet(exchange, asset, true);
         mainnetController.setOTCWhitelistedAsset(exchange, asset, true);
 
         vm.stopPrank();
@@ -379,7 +385,7 @@ contract MainnetControllerSetOTCWhitelistedAssetTests is MainnetControllerAdminT
 
         vm.prank(admin);
         vm.expectEmit(address(mainnetController));
-        emit MainnetController.OTCWhitelistedAssetSet(exchange, asset, false);
+        emit OTCLib.OTCWhitelistedAssetSet(exchange, asset, false);
         mainnetController.setOTCWhitelistedAsset(exchange, asset, false);
 
         _assertReentrancyGuardWrittenToTwice();
@@ -421,7 +427,7 @@ contract MainnetControllerSetMaxExchangeRateTests is MainnetControllerAdminTestB
 
         vm.prank(admin);
         vm.expectEmit(address(mainnetController));
-        emit MainnetController.MaxExchangeRateSet(token, 1e36);
+        emit ERC4626Lib.MaxExchangeRateSet(token, 1e36);
         mainnetController.setMaxExchangeRate(token, 1e18, 1e18);
 
         _assertReentrancyGuardWrittenToTwice();
@@ -430,14 +436,14 @@ contract MainnetControllerSetMaxExchangeRateTests is MainnetControllerAdminTestB
 
         vm.prank(admin);
         vm.expectEmit(address(mainnetController));
-        emit MainnetController.MaxExchangeRateSet(token, 1e24);
+        emit ERC4626Lib.MaxExchangeRateSet(token, 1e24);
         mainnetController.setMaxExchangeRate(token, 1e18, 1e6);
 
         assertEq(mainnetController.maxExchangeRates(token), 1e24);
 
         vm.prank(admin);
         vm.expectEmit(address(mainnetController));
-        emit MainnetController.MaxExchangeRateSet(token, 1e48);
+        emit ERC4626Lib.MaxExchangeRateSet(token, 1e48);
         mainnetController.setMaxExchangeRate(token, 1e6, 1e18);
 
         assertEq(mainnetController.maxExchangeRates(token), 1e48);
@@ -488,7 +494,7 @@ contract MainnetControllerSetUniswapV4TickLimitsTests is MainnetControllerAdminT
 
     function test_setUniswapV4TickLimits() external {
         vm.expectEmit(address(mainnetController));
-        emit MainnetController.UniswapV4TickLimitsSet(_POOL_ID, -60, 60, 20);
+        emit UniswapV4Lib.UniswapV4TickLimitsSet(_POOL_ID, -60, 60, 20);
 
         vm.record();
 
@@ -616,14 +622,14 @@ contract ForeignControllerAdminTests is UnitTestBase {
 
         vm.prank(admin);
         vm.expectEmit(address(foreignController));
-        emit ForeignController.MintRecipientSet(1, mintRecipient1);
+        emit CCTPLib.MintRecipientSet(1, mintRecipient1);
         foreignController.setMintRecipient(1, mintRecipient1);
 
         assertEq(foreignController.mintRecipients(1), mintRecipient1);
 
         vm.prank(admin);
         vm.expectEmit(address(foreignController));
-        emit ForeignController.MintRecipientSet(2, mintRecipient2);
+        emit CCTPLib.MintRecipientSet(2, mintRecipient2);
         foreignController.setMintRecipient(2, mintRecipient2);
 
         assertEq(foreignController.mintRecipients(2), mintRecipient2);
@@ -632,7 +638,7 @@ contract ForeignControllerAdminTests is UnitTestBase {
 
         vm.prank(admin);
         vm.expectEmit(address(foreignController));
-        emit ForeignController.MintRecipientSet(1, mintRecipient2);
+        emit CCTPLib.MintRecipientSet(1, mintRecipient2);
         foreignController.setMintRecipient(1, mintRecipient2);
 
         assertEq(foreignController.mintRecipients(1), mintRecipient2);
@@ -669,14 +675,14 @@ contract ForeignControllerAdminTests is UnitTestBase {
 
         vm.prank(admin);
         vm.expectEmit(address(foreignController));
-        emit ForeignController.LayerZeroRecipientSet(1, layerZeroRecipient1);
+        emit LayerZeroLib.LayerZeroRecipientSet(1, layerZeroRecipient1);
         foreignController.setLayerZeroRecipient(1, layerZeroRecipient1);
 
         assertEq(foreignController.layerZeroRecipients(1), layerZeroRecipient1);
 
         vm.prank(admin);
         vm.expectEmit(address(foreignController));
-        emit ForeignController.LayerZeroRecipientSet(2, layerZeroRecipient2);
+        emit LayerZeroLib.LayerZeroRecipientSet(2, layerZeroRecipient2);
         foreignController.setLayerZeroRecipient(2, layerZeroRecipient2);
 
         assertEq(foreignController.layerZeroRecipients(2), layerZeroRecipient2);
@@ -685,7 +691,7 @@ contract ForeignControllerAdminTests is UnitTestBase {
 
         vm.prank(admin);
         vm.expectEmit(address(foreignController));
-        emit ForeignController.LayerZeroRecipientSet(1, layerZeroRecipient2);
+        emit LayerZeroLib.LayerZeroRecipientSet(1, layerZeroRecipient2);
         foreignController.setLayerZeroRecipient(1, layerZeroRecipient2);
 
         assertEq(foreignController.layerZeroRecipients(1), layerZeroRecipient2);
@@ -723,7 +729,7 @@ contract ForeignControllerAdminTests is UnitTestBase {
 
         vm.prank(admin);
         vm.expectEmit(address(foreignController));
-        emit ForeignController.MaxExchangeRateSet(token, 1e36);
+        emit ERC4626Lib.MaxExchangeRateSet(token, 1e36);
         foreignController.setMaxExchangeRate(token, 1e18, 1e18);
 
         _assertReentrancyGuardWrittenToTwice();
@@ -732,14 +738,14 @@ contract ForeignControllerAdminTests is UnitTestBase {
 
         vm.prank(admin);
         vm.expectEmit(address(foreignController));
-        emit ForeignController.MaxExchangeRateSet(token, 1e24);
+        emit ERC4626Lib.MaxExchangeRateSet(token, 1e24);
         foreignController.setMaxExchangeRate(token, 1e18, 1e6);
 
         assertEq(foreignController.maxExchangeRates(token), 1e24);
 
         vm.prank(admin);
         vm.expectEmit(address(foreignController));
-        emit ForeignController.MaxExchangeRateSet(token, 1e48);
+        emit ERC4626Lib.MaxExchangeRateSet(token, 1e48);
         foreignController.setMaxExchangeRate(token, 1e6, 1e18);
 
         assertEq(foreignController.maxExchangeRates(token), 1e48);

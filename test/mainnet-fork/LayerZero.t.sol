@@ -120,7 +120,7 @@ contract MainnetControllerTransferLayerZeroFailureTests is MainnetControllerLaye
             oftCmd       : ""
         });
 
-        MessagingFee memory fee = ILayerZero(USDT_OFT).quoteSend(sendParams, false);
+        MessagingFee memory fee = ILayerZeroLike(USDT_OFT).quoteSend(sendParams, false);
 
         vm.prank(relayer);
         vm.expectRevert("RateLimits/rate-limit-exceeded");
@@ -168,7 +168,7 @@ contract MainnetControllerTransferLayerZeroFailureTests is MainnetControllerLaye
             oftCmd       : ""
         });
 
-        MessagingFee memory fee = ILayerZero(USDT_OFT).quoteSend(sendParams, false);
+        MessagingFee memory fee = ILayerZeroLike(USDT_OFT).quoteSend(sendParams, false);
 
         deal(relayer, fee.nativeFee);
 
@@ -236,7 +236,7 @@ contract MainnetControllerTransferLayerZeroSuccessTests is MainnetControllerLaye
             oftCmd       : ""
         });
 
-        MessagingFee memory fee = ILayerZero(USDT_OFT).quoteSend(sendParams, false);
+        MessagingFee memory fee = ILayerZeroLike(USDT_OFT).quoteSend(sendParams, false);
 
         vm.record();
 
@@ -487,7 +487,7 @@ contract ForeignControllerTransferLayerZeroFailureTests is ArbitrumChainLayerZer
             oftCmd       : ""
         });
 
-        MessagingFee memory fee = ILayerZero(USDT_OFT).quoteSend(sendParams, false);
+        MessagingFee memory fee = ILayerZeroLike(USDT_OFT).quoteSend(sendParams, false);
 
         vm.prank(relayer);
         vm.expectRevert("RateLimits/rate-limit-exceeded");
@@ -535,7 +535,7 @@ contract ForeignControllerTransferLayerZeroFailureTests is ArbitrumChainLayerZer
             oftCmd       : ""
         });
 
-        MessagingFee memory fee = ILayerZero(USDT_OFT).quoteSend(sendParams, false);
+        MessagingFee memory fee = ILayerZeroLike(USDT_OFT).quoteSend(sendParams, false);
 
         deal(relayer, fee.nativeFee);
 
@@ -607,7 +607,7 @@ contract ForeignControllerTransferLayerZeroSuccessTests is ArbitrumChainLayerZer
             oftCmd       : ""
         });
 
-        MessagingFee memory fee = ILayerZero(USDT_OFT).quoteSend(sendParams, false);
+        MessagingFee memory fee = ILayerZeroLike(USDT_OFT).quoteSend(sendParams, false);
 
         vm.record();
 

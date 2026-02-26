@@ -112,7 +112,7 @@ contract MainnetControllerPrepareUSDeMintFailureTests is EthenaTestBase {
     function test_prepareUSDeMint_reentrancy() external {
         _setControllerEntered();
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        mainnetController.prepareUSDeMint(100);
+        mainnetController.prepareUSDEMint(100);
     }
 
     function test_prepareUSDeMint_notRelayer() external {
@@ -121,7 +121,7 @@ contract MainnetControllerPrepareUSDeMintFailureTests is EthenaTestBase {
             address(this),
             RELAYER
         ));
-        mainnetController.prepareUSDeMint(100);
+        mainnetController.prepareUSDEMint(100);
     }
 
     function test_prepareUSDeMint_zeroMaxAmount() external {
@@ -131,7 +131,7 @@ contract MainnetControllerPrepareUSDeMintFailureTests is EthenaTestBase {
 
         vm.prank(relayer);
         vm.expectRevert("RateLimits/zero-maxAmount");
-        mainnetController.prepareUSDeMint(1e18);
+        mainnetController.prepareUSDEMint(1e18);
     }
 
     function test_prepareUSDeMint_rateLimitBoundary() external {
@@ -145,10 +145,10 @@ contract MainnetControllerPrepareUSDeMintFailureTests is EthenaTestBase {
 
         vm.prank(relayer);
         vm.expectRevert("RateLimits/rate-limit-exceeded");
-        mainnetController.prepareUSDeMint(100e6 + 1);
+        mainnetController.prepareUSDEMint(100e6 + 1);
 
         vm.prank(relayer);
-        mainnetController.prepareUSDeMint(100e6);
+        mainnetController.prepareUSDEMint(100e6);
     }
 
 }
@@ -172,7 +172,7 @@ contract MainnetControllerPrepareUSDeMintSuccessTests is EthenaTestBase {
         vm.record();
 
         vm.prank(relayer);
-        mainnetController.prepareUSDeMint(100e6);
+        mainnetController.prepareUSDEMint(100e6);
 
         _assertReentrancyGuardWrittenToTwice();
 
@@ -183,7 +183,7 @@ contract MainnetControllerPrepareUSDeMintSuccessTests is EthenaTestBase {
         assertEq(rateLimits.getCurrentRateLimit(key), 5_000_000e6);
 
         vm.prank(relayer);
-        mainnetController.prepareUSDeMint(4_000_000e6);
+        mainnetController.prepareUSDEMint(4_000_000e6);
 
         assertEq(rateLimits.getCurrentRateLimit(key), 1_000_000e6);
 
@@ -192,7 +192,7 @@ contract MainnetControllerPrepareUSDeMintSuccessTests is EthenaTestBase {
         assertEq(rateLimits.getCurrentRateLimit(key), 2_000_000e6 - 6400);  // Rounding
 
         vm.prank(relayer);
-        mainnetController.prepareUSDeMint(600_000e6);
+        mainnetController.prepareUSDEMint(600_000e6);
 
         assertEq(rateLimits.getCurrentRateLimit(key), 1_400_000e6 - 6400);  // Rounding
     }
@@ -204,7 +204,7 @@ contract MainnetControllerPrepareUSDeBurnFailureTests is EthenaTestBase {
     function test_prepareUSDeBurn_reentrancy() external {
         _setControllerEntered();
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        mainnetController.prepareUSDeBurn(100);
+        mainnetController.prepareUSDEBurn(100);
     }
 
     function test_prepareUSDeBurn_notRelayer() external {
@@ -213,7 +213,7 @@ contract MainnetControllerPrepareUSDeBurnFailureTests is EthenaTestBase {
             address(this),
             RELAYER
         ));
-        mainnetController.prepareUSDeBurn(100);
+        mainnetController.prepareUSDEBurn(100);
     }
 
     function test_prepareUSDeBurn_zeroMaxAmount() external {
@@ -223,7 +223,7 @@ contract MainnetControllerPrepareUSDeBurnFailureTests is EthenaTestBase {
 
         vm.prank(relayer);
         vm.expectRevert("RateLimits/zero-maxAmount");
-        mainnetController.prepareUSDeBurn(1e18);
+        mainnetController.prepareUSDEBurn(1e18);
     }
 
     function test_prepareUSDeBurn_rateLimitBoundary() external {
@@ -237,10 +237,10 @@ contract MainnetControllerPrepareUSDeBurnFailureTests is EthenaTestBase {
 
         vm.prank(relayer);
         vm.expectRevert("RateLimits/rate-limit-exceeded");
-        mainnetController.prepareUSDeBurn(100e18 + 1);
+        mainnetController.prepareUSDEBurn(100e18 + 1);
 
         vm.prank(relayer);
-        mainnetController.prepareUSDeBurn(100e18);
+        mainnetController.prepareUSDEBurn(100e18);
     }
 
 }
@@ -264,7 +264,7 @@ contract MainnetControllerPrepareUSDeBurnSuccessTests is EthenaTestBase {
         vm.record();
 
         vm.prank(relayer);
-        mainnetController.prepareUSDeBurn(100e18);
+        mainnetController.prepareUSDEBurn(100e18);
 
         _assertReentrancyGuardWrittenToTwice();
 
@@ -275,7 +275,7 @@ contract MainnetControllerPrepareUSDeBurnSuccessTests is EthenaTestBase {
         assertEq(rateLimits.getCurrentRateLimit(key), 5_000_000e18);
 
         vm.prank(relayer);
-        mainnetController.prepareUSDeBurn(4_000_000e18);
+        mainnetController.prepareUSDEBurn(4_000_000e18);
 
         assertEq(rateLimits.getCurrentRateLimit(key), 1_000_000e18);
 
@@ -284,7 +284,7 @@ contract MainnetControllerPrepareUSDeBurnSuccessTests is EthenaTestBase {
         assertEq(rateLimits.getCurrentRateLimit(key), 2_000_000e18 - 6400);  // Rounding
 
         vm.prank(relayer);
-        mainnetController.prepareUSDeBurn(600_000e18);
+        mainnetController.prepareUSDEBurn(600_000e18);
 
         assertEq(rateLimits.getCurrentRateLimit(key), 1_400_000e18 - 6400);  // Rounding
     }
@@ -296,7 +296,7 @@ contract MainnetControllerCooldownAssetsSUSDeFailureTests is EthenaTestBase {
     function test_cooldownAssetsSUSDe_reentrancy() external {
         _setControllerEntered();
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        mainnetController.cooldownAssetsSUSDe(100e18);
+        mainnetController.cooldownAssetsSUSDE(100e18);
     }
 
     function test_cooldownAssetsSUSDe_notRelayer() external {
@@ -305,7 +305,7 @@ contract MainnetControllerCooldownAssetsSUSDeFailureTests is EthenaTestBase {
             address(this),
             RELAYER
         ));
-        mainnetController.cooldownAssetsSUSDe(100e18);
+        mainnetController.cooldownAssetsSUSDE(100e18);
     }
 
     function test_cooldownAssetsSUSDe_zeroMaxAmount() external {
@@ -315,7 +315,7 @@ contract MainnetControllerCooldownAssetsSUSDeFailureTests is EthenaTestBase {
 
         vm.prank(relayer);
         vm.expectRevert("RateLimits/zero-maxAmount");
-        mainnetController.cooldownAssetsSUSDe(100e18);
+        mainnetController.cooldownAssetsSUSDE(100e18);
     }
 
     function test_cooldownAssetsSUSDe_rateLimitBoundary() external {
@@ -332,10 +332,10 @@ contract MainnetControllerCooldownAssetsSUSDeFailureTests is EthenaTestBase {
 
         vm.prank(relayer);
         vm.expectRevert("RateLimits/rate-limit-exceeded");
-        mainnetController.cooldownAssetsSUSDe(100e18 + 1);
+        mainnetController.cooldownAssetsSUSDE(100e18 + 1);
 
         vm.prank(relayer);
-        mainnetController.cooldownAssetsSUSDe(100e18);
+        mainnetController.cooldownAssetsSUSDE(100e18);
     }
 
 }
@@ -379,7 +379,7 @@ contract MainnetControllerCooldownAssetsSUSDeSuccessTests is EthenaTestBase {
         vm.prank(relayer);
         vm.expectEmit(address(susde));
         emit Withdraw(address(almProxy), silo, address(almProxy), assets, 100e18);
-        uint256 returnedShares = mainnetController.cooldownAssetsSUSDe(assets);
+        uint256 returnedShares = mainnetController.cooldownAssetsSUSDE(assets);
 
         _assertReentrancyGuardWrittenToTwice();
 
@@ -395,7 +395,7 @@ contract MainnetControllerCooldownAssetsSUSDeSuccessTests is EthenaTestBase {
         assertEq(rateLimits.getCurrentRateLimit(key), 5_000_000e18);
 
         vm.prank(relayer);
-        mainnetController.cooldownAssetsSUSDe(4_000_000e18);
+        mainnetController.cooldownAssetsSUSDE(4_000_000e18);
 
         assertEq(rateLimits.getCurrentRateLimit(key), 1_000_000e18);
 
@@ -404,7 +404,7 @@ contract MainnetControllerCooldownAssetsSUSDeSuccessTests is EthenaTestBase {
         assertEq(rateLimits.getCurrentRateLimit(key), 2_000_000e18 - 6400);  // Rounding
 
         vm.prank(relayer);
-        mainnetController.cooldownAssetsSUSDe(600_000e18);
+        mainnetController.cooldownAssetsSUSDE(600_000e18);
 
         assertEq(rateLimits.getCurrentRateLimit(key), 1_400_000e18 - 6400);  // Rounding
     }
@@ -416,7 +416,7 @@ contract MainnetControllerCooldownSharesSUSDeFailureTests is EthenaTestBase {
     function test_cooldownSharesSUSDe_reentrancy() external {
         _setControllerEntered();
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        mainnetController.cooldownSharesSUSDe(100);
+        mainnetController.cooldownSharesSUSDE(100);
     }
 
     function test_cooldownSharesSUSDe_notRelayer() external {
@@ -425,7 +425,7 @@ contract MainnetControllerCooldownSharesSUSDeFailureTests is EthenaTestBase {
             address(this),
             RELAYER
         ));
-        mainnetController.cooldownSharesSUSDe(100);
+        mainnetController.cooldownSharesSUSDE(100);
     }
 
     function test_cooldownSharesSUSDe_zeroMaxAmount() external {
@@ -437,7 +437,7 @@ contract MainnetControllerCooldownSharesSUSDeFailureTests is EthenaTestBase {
 
         vm.prank(relayer);
         vm.expectRevert("RateLimits/zero-maxAmount");
-        mainnetController.cooldownSharesSUSDe(100e18);
+        mainnetController.cooldownSharesSUSDE(100e18);
     }
 
     function test_cooldownSharesSUSDe_rateLimitBoundary() external {
@@ -460,10 +460,10 @@ contract MainnetControllerCooldownSharesSUSDeFailureTests is EthenaTestBase {
 
         vm.prank(relayer);
         vm.expectRevert("RateLimits/rate-limit-exceeded");
-        mainnetController.cooldownSharesSUSDe(overBoundaryShares);
+        mainnetController.cooldownSharesSUSDE(overBoundaryShares);
 
         vm.prank(relayer);
-        mainnetController.cooldownSharesSUSDe(boundaryShares);
+        mainnetController.cooldownSharesSUSDE(boundaryShares);
     }
 
 }
@@ -506,7 +506,7 @@ contract MainnetControllerCooldownSharesSUSDeSuccessTests is EthenaTestBase {
         vm.prank(relayer);
         vm.expectEmit(address(susde));
         emit Withdraw(address(almProxy), silo, address(almProxy), assets, 100e18);
-        uint256 returnedAssets = mainnetController.cooldownSharesSUSDe(100e18);
+        uint256 returnedAssets = mainnetController.cooldownSharesSUSDE(100e18);
 
         _assertReentrancyGuardWrittenToTwice();
 
@@ -523,7 +523,7 @@ contract MainnetControllerCooldownSharesSUSDeSuccessTests is EthenaTestBase {
         assertEq(rateLimits.getCurrentRateLimit(key), 5_000_000e18);
 
         vm.prank(relayer);
-        uint256 returnedAssets = mainnetController.cooldownSharesSUSDe(4_000_000e18);
+        uint256 returnedAssets = mainnetController.cooldownSharesSUSDE(4_000_000e18);
 
         uint256 assets1 = susde.convertToAssets(4_000_000e18);
 
@@ -538,7 +538,7 @@ contract MainnetControllerCooldownSharesSUSDeSuccessTests is EthenaTestBase {
         assertEq(rateLimits.getCurrentRateLimit(key), 5_000_000e18 - assets1 + (1_000_000e18 - 6400));  // Rounding
 
         vm.prank(relayer);
-        returnedAssets = mainnetController.cooldownSharesSUSDe(600_000e18);
+        returnedAssets = mainnetController.cooldownSharesSUSDE(600_000e18);
 
         uint256 assets2 = susde.convertToAssets(600_000e18);
 
@@ -556,7 +556,7 @@ contract MainnetControllerUnstakeSUSDeFailureTests is EthenaTestBase {
     function test_unstakeSUSDe_reentrancy() external {
         _setControllerEntered();
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        mainnetController.unstakeSUSDe();
+        mainnetController.unstakeSUSDE();
     }
 
     function test_unstakeSUSDe_notRelayer() external {
@@ -565,7 +565,7 @@ contract MainnetControllerUnstakeSUSDeFailureTests is EthenaTestBase {
             address(this),
             RELAYER
         ));
-        mainnetController.unstakeSUSDe();
+        mainnetController.unstakeSUSDE();
     }
 
     function test_unstakeSUSDe_cooldownBoundary() external {
@@ -581,18 +581,18 @@ contract MainnetControllerUnstakeSUSDeFailureTests is EthenaTestBase {
         vm.stopPrank();
 
         vm.prank(relayer);
-        mainnetController.cooldownAssetsSUSDe(100e18);
+        mainnetController.cooldownAssetsSUSDE(100e18);
 
         skip(7 days - 1);  // Cooldown period boundary
 
         vm.prank(relayer);
         vm.expectRevert(abi.encodeWithSignature("InvalidCooldown()"));
-        mainnetController.unstakeSUSDe();
+        mainnetController.unstakeSUSDE();
 
         skip(1 seconds);
 
         vm.prank(relayer);
-        mainnetController.unstakeSUSDe();
+        mainnetController.unstakeSUSDE();
     }
 
 }
@@ -618,7 +618,7 @@ contract MainnetControllerUnstakeSUSDeSuccessTests is EthenaTestBase {
         deal(address(susde), address(almProxy), 100e18);
 
         vm.prank(relayer);
-        mainnetController.cooldownSharesSUSDe(100e18);
+        mainnetController.cooldownSharesSUSDE(100e18);
 
         assertEq(usde.balanceOf(address(almProxy)), 0);
         assertEq(usde.balanceOf(silo),              startingSiloBalance + assets);
@@ -628,7 +628,7 @@ contract MainnetControllerUnstakeSUSDeSuccessTests is EthenaTestBase {
         vm.record();
 
         vm.prank(relayer);
-        mainnetController.unstakeSUSDe();
+        mainnetController.unstakeSUSDE();
 
         _assertReentrancyGuardWrittenToTwice();
 
@@ -695,7 +695,7 @@ contract MainnetControllerEthenaE2ETests is EthenaTestBase {
         assertEq(rateLimits.getCurrentRateLimit(mintKey), 5_000_000e6);
 
         vm.prank(relayer);
-        mainnetController.prepareUSDeMint(1_000_000e6);
+        mainnetController.prepareUSDEMint(1_000_000e6);
 
         assertEq(rateLimits.getCurrentRateLimit(mintKey), 4_000_000e6);
 
@@ -753,7 +753,7 @@ contract MainnetControllerEthenaE2ETests is EthenaTestBase {
         assertEq(rateLimits.getCurrentRateLimit(cooldownKey), 5_000_000e18);
 
         vm.prank(relayer);
-        mainnetController.cooldownAssetsSUSDe(500_000e18 - 1);
+        mainnetController.cooldownAssetsSUSDE(500_000e18 - 1);
 
         assertEq(rateLimits.getCurrentRateLimit(cooldownKey), 4_500_000e18 + 1);
 
@@ -769,7 +769,7 @@ contract MainnetControllerEthenaE2ETests is EthenaTestBase {
         assertEq(usde.balanceOf(address(almProxy)), 500_000e18);
 
         vm.prank(relayer);
-        mainnetController.unstakeSUSDe();
+        mainnetController.unstakeSUSDE();
 
         assertEq(usde.balanceOf(silo),              startingSiloBalance);
         assertEq(usde.balanceOf(address(almProxy)), 1_000_000e18 - 1);
@@ -781,7 +781,7 @@ contract MainnetControllerEthenaE2ETests is EthenaTestBase {
         assertEq(rateLimits.getCurrentRateLimit(burnKey), 5_000_000e18);
 
         vm.prank(relayer);
-        mainnetController.prepareUSDeBurn(1_000_000e18 - 1);
+        mainnetController.prepareUSDEBurn(1_000_000e18 - 1);
 
         assertEq(rateLimits.getCurrentRateLimit(burnKey), 4_000_000e18 + 1);
 
@@ -812,7 +812,7 @@ contract MainnetControllerEthenaE2ETests is EthenaTestBase {
         assertEq(rateLimits.getCurrentRateLimit(mintKey), 5_000_000e6);
 
         vm.prank(relayer);
-        mainnetController.prepareUSDeMint(1_000_000e6);
+        mainnetController.prepareUSDEMint(1_000_000e6);
 
         assertEq(rateLimits.getCurrentRateLimit(mintKey), 4_000_000e6);
 
@@ -872,7 +872,7 @@ contract MainnetControllerEthenaE2ETests is EthenaTestBase {
         assertEq(rateLimits.getCurrentRateLimit(cooldownKey), 5_000_000e18);
 
         vm.prank(relayer);
-        mainnetController.cooldownSharesSUSDe(susdeShares);
+        mainnetController.cooldownSharesSUSDE(susdeShares);
 
         assertEq(rateLimits.getCurrentRateLimit(cooldownKey), 4_500_000e18 + 1);
 
@@ -888,7 +888,7 @@ contract MainnetControllerEthenaE2ETests is EthenaTestBase {
         assertEq(usde.balanceOf(address(almProxy)), 500_000e18);
 
         vm.prank(relayer);
-        mainnetController.unstakeSUSDe();
+        mainnetController.unstakeSUSDE();
 
         assertEq(usde.balanceOf(silo),              startingSiloBalance);
         assertEq(usde.balanceOf(address(almProxy)), 1_000_000e18 - 1);
@@ -900,7 +900,7 @@ contract MainnetControllerEthenaE2ETests is EthenaTestBase {
         assertEq(rateLimits.getCurrentRateLimit(burnKey), 5_000_000e18);
 
         vm.prank(relayer);
-        mainnetController.prepareUSDeBurn(1_000_000e18 - 1);
+        mainnetController.prepareUSDEBurn(1_000_000e18 - 1);
 
         assertEq(rateLimits.getCurrentRateLimit(burnKey), 4_000_000e18 + 1);
 
@@ -928,7 +928,7 @@ contract MainnetControllerEthenaE2ETests is EthenaTestBase {
         assertEq(rateLimits.getCurrentRateLimit(cooldownKey), 5_000_000e18);
 
         vm.prank(relayer);
-        mainnetController.cooldownAssetsSUSDe(4_000_000e18);
+        mainnetController.cooldownAssetsSUSDE(4_000_000e18);
 
         assertEq(rateLimits.getCurrentRateLimit(cooldownKey), 1_000_000e18);
 
@@ -937,7 +937,7 @@ contract MainnetControllerEthenaE2ETests is EthenaTestBase {
         assertEq(rateLimits.getCurrentRateLimit(cooldownKey), 1_000_000e18 + (1_000_000e18 - 6400));  // Rounding
 
         vm.prank(relayer);
-        mainnetController.cooldownSharesSUSDe(600_000e18);
+        mainnetController.cooldownSharesSUSDE(600_000e18);
 
         uint256 assets2 = susde.convertToAssets(600_000e18);
 
