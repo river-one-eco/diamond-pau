@@ -5,10 +5,14 @@ import { console } from "../../lib/forge-std/src/console.sol";
 
 import { ReentrancyGuard } from "../../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
-import { Currency }     from "../../lib/uniswap-v4-core/src/types/Currency.sol";
-import { PoolId }       from "../../lib/uniswap-v4-core/src/types/PoolId.sol";
-import { PoolKey }      from "../../lib/uniswap-v4-core/src/types/PoolKey.sol";
+import { Currency } from "../../lib/uniswap-v4-periphery/lib/v4-core/src/types/Currency.sol";
+import { PoolId }  from "../../lib/uniswap-v4-periphery/lib/v4-core/src/types/PoolId.sol";
+import { PoolKey }  from "../../lib/uniswap-v4-periphery/lib/v4-core/src/types/PoolKey.sol";
+
+import { IV4Router }    from "../../lib/uniswap-v4-periphery/src/interfaces/IV4Router.sol";
+import { Actions }      from "../../lib/uniswap-v4-periphery/src/libraries/Actions.sol";
 import { PositionInfo } from "../../lib/uniswap-v4-periphery/src/libraries/PositionInfoLibrary.sol";
+
 import { FullMath }     from "../../lib/uniswap-v4-core/src/libraries/FullMath.sol";
 import { TickMath }     from "../../lib/uniswap-v4-core/src/libraries/TickMath.sol";
 
