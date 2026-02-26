@@ -5,7 +5,7 @@ import { ReentrancyGuard } from "../../lib/openzeppelin-contracts/contracts/util
 
 import "./ForkTestBase.t.sol";
 
-import { IMapleTokenLike } from "../../src/MainnetController.sol";
+import { IMapleTokenLike } from "../interfaces/Maple.sol";
 
 interface IPermissionManagerLike {
     function admin() external view returns (address);

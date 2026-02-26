@@ -41,3 +41,12 @@
 [submodule "lib/oz-upgradeable"]
 	path = lib/oz-upgradeable
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts-upgradeable.git
+[submodule "lib/uniswap-v4-core"]
+	path = lib/uniswap-v4-core
+	url = https://github.com/Uniswap/v4-core
+[submodule "lib/devtools"]
+	path = lib/devtools
+	url = https://github.com/LayerZero-Labs/devtools
+[submodule "lib/sdai"]
+	path = lib/sdai
+	url = https://github.com/makerdao/sdai

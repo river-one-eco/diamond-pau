@@ -15,7 +15,7 @@ import { AllocatorDeploy } from "dss-allocator/deploy/AllocatorDeploy.sol";
 import { IERC20 }   from "forge-std/interfaces/IERC20.sol";
 import { IERC4626 } from "forge-std/interfaces/IERC4626.sol";
 
-import { ISUsds } from "sdai/src/ISUsds.sol";
+import { ISUsds } from "lib/sdai/src/ISUsds.sol";
 
 import { Ethereum } from "spark-address-registry/Ethereum.sol";
 

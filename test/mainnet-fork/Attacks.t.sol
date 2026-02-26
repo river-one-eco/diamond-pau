@@ -7,7 +7,7 @@ import { MainnetControllerBUIDLTestBase }  from "./Buidl.t.sol";
 import { MainnetControllerEthenaE2ETests } from "./Ethena.t.sol";
 import { MapleTestBase }                   from "./Maple.t.sol";
 
-import { IMapleTokenLike } from "../../src/MainnetController.sol";
+import { IMapleTokenLike } from "../interfaces/Maple.sol";
 
 interface IBuidlLike is IERC20 {
     function issueTokens(address to, uint256 amount) external;
