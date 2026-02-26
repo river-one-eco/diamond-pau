@@ -304,10 +304,10 @@ contract ERC20ApproveReturningFalseNonZeroAmountMainnetTest is MainnetController
     function test_approveReturningFalseOnNonZeroAmount() public {
         ERC20ApproveFalseNonZeroAmount mock = new ERC20ApproveFalseNonZeroAmount("Mock", "MOCK");
 
-        vm.expectRevert("MC/approve-failed");
+        vm.expectRevert("ApproveLib/approve-failed");
         IHarness(harness).approve(address(mock), makeAddr("spender"), 100);
 
-        vm.expectRevert("MC/approve-failed");
+        vm.expectRevert("ApproveLib/approve-failed");
         IHarness(harness).approveCurve(address(almProxy), address(mock), makeAddr("spender"), 100);
     }
 

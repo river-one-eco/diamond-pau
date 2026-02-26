@@ -120,7 +120,7 @@ contract MainnetControllerSetOTCBufferFailureTests is MainnetControllerOTCSwapBa
         vm.prank(relayer);
         mainnetController.otcSend(exchange, address(usdt), 5_000_000e6);
 
-        vm.expectRevert("MC/swap-in-progress");
+        vm.expectRevert("OTCLib/swap-in-progress");
         vm.prank(Ethereum.SPARK_PROXY);
         mainnetController.setOTCBuffer(exchange, makeAddr("new-buffer"));
     }
@@ -146,19 +146,19 @@ contract MainnetControllerOtcSendFailureTests is MainnetControllerOTCSwapBase {
 
     function test_otcSend_assetToSendZero() external {
         vm.prank(relayer);
-        vm.expectRevert("MC/asset-to-send-zero");
+        vm.expectRevert("OTCLib/asset-to-send-zero");
         mainnetController.otcSend(exchange, address(0), 1e18);
     }
 
     function test_otcSend_amountToSendZero() external {
         vm.prank(relayer);
-        vm.expectRevert("MC/amount-to-send-zero");
+        vm.expectRevert("OTCLib/amount-to-send-zero");
         mainnetController.otcSend(exchange, address(usdt), 0);
     }
 
     function test_otcSend_assetNotWhitelisted() external {
         vm.prank(relayer);
-        vm.expectRevert("MC/asset-not-whitelisted");
+        vm.expectRevert("OTCLib/asset-not-whitelisted");
         mainnetController.otcSend(exchange, address(1), 1e18);
     }
 
@@ -207,7 +207,7 @@ contract MainnetControllerOtcSendFailureTests is MainnetControllerOTCSwapBase {
         deal(token, address(almProxy), 1_000_000e6);
 
         vm.prank(relayer);
-        vm.expectRevert("MC/transfer-failed");
+        vm.expectRevert("OTCLib/transfer-failed");
         mainnetController.otcSend(exchange, token, 1_000_000e6);
     }
 
@@ -238,7 +238,7 @@ contract MainnetControllerOtcSendFailureTests is MainnetControllerOTCSwapBase {
         assertFalse(mainnetController.isOTCSwapReady(address(exchange)));
 
         vm.prank(relayer);
-        vm.expectRevert("MC/last-swap-not-returned");
+        vm.expectRevert("OTCLib/last-swap-not-returned");
         mainnetController.otcSend(exchange, address(usdt), 1e6);
 
         deal(address(usdt), buffer, 1);
@@ -280,7 +280,7 @@ contract MainnetControllerOtcSendFailureTests is MainnetControllerOTCSwapBase {
         assertFalse(mainnetController.isOTCSwapReady(address(exchange)));
 
         vm.prank(relayer);
-        vm.expectRevert("MC/last-swap-not-returned");
+        vm.expectRevert("OTCLib/last-swap-not-returned");
         mainnetController.otcSend(exchange, address(usds), 1e18);
 
         deal(address(usds), buffer, 1);
@@ -323,7 +323,7 @@ contract MainnetControllerOtcSendFailureTests is MainnetControllerOTCSwapBase {
         assertFalse(mainnetController.isOTCSwapReady(address(exchange)));
 
         vm.prank(relayer);
-        vm.expectRevert("MC/last-swap-not-returned");
+        vm.expectRevert("OTCLib/last-swap-not-returned");
         mainnetController.otcSend(exchange, address(usdt), 1e6);
 
         skip(1 seconds);
@@ -363,7 +363,7 @@ contract MainnetControllerOtcSendFailureTests is MainnetControllerOTCSwapBase {
         assertFalse(mainnetController.isOTCSwapReady(address(exchange)));
 
         vm.prank(relayer);
-        vm.expectRevert("MC/last-swap-not-returned");
+        vm.expectRevert("OTCLib/last-swap-not-returned");
         mainnetController.otcSend(exchange, address(usds), 1e18);
 
         skip(1 seconds);
@@ -485,19 +485,19 @@ contract MainnetControllerOTCClaimFailureTests is MainnetControllerOTCSwapBase {
         mainnetController.setOTCBuffer(exchange, address(otcBuffer));
 
         vm.prank(relayer);
-        vm.expectRevert("MC/asset-to-claim-zero");
+        vm.expectRevert("OTCLib/asset-to-claim-zero");
         mainnetController.otcClaim(exchange, address(0));
     }
 
     function test_otcClaim_otcBufferNotSet() external {
         vm.prank(relayer);
-        vm.expectRevert("MC/otc-buffer-not-set");
+        vm.expectRevert("OTCLib/otc-buffer-not-set");
         mainnetController.otcClaim(makeAddr("fake-exchange"), address(1));
     }
 
     function test_otcClaim_assetNotWhitelisted() external {
         vm.prank(relayer);
-        vm.expectRevert("MC/asset-not-whitelisted");
+        vm.expectRevert("OTCLib/asset-not-whitelisted");
         mainnetController.otcClaim(exchange, address(1));
     }
 
@@ -513,7 +513,7 @@ contract MainnetControllerOTCClaimFailureTests is MainnetControllerOTCSwapBase {
         otcBuffer.approve(token, type(uint256).max);
 
         vm.prank(relayer);
-        vm.expectRevert("MC/transferFrom-failed");
+        vm.expectRevert("OTCLib/transferFrom-failed");
         mainnetController.otcClaim(exchange, token);
     }
 
@@ -697,7 +697,7 @@ contract MainnetControllerE2ETests is MainnetControllerOTCSwapBase {
 
         // Cannot do another swap
         vm.prank(relayer);
-        vm.expectRevert("MC/last-swap-not-returned");
+        vm.expectRevert("OTCLib/last-swap-not-returned");
         mainnetController.otcSend(exchange, address(usds), 1e18);
 
         // Step 4: Demonstrate how recharging can bring an OTC swap above slippage requirements over time
@@ -848,7 +848,7 @@ contract MainnetControllerE2ETests is MainnetControllerOTCSwapBase {
 
         // Cannot do another swap
         vm.prank(relayer);
-        vm.expectRevert("MC/last-swap-not-returned");
+        vm.expectRevert("OTCLib/last-swap-not-returned");
         mainnetController.otcSend(exchange, address(usdt), 1e6);
 
         // Step 4: Demonstrate how recharging can bring an OTC swap above slippage requirements over time

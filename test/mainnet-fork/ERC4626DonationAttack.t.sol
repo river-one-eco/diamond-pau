@@ -92,7 +92,7 @@ contract ERC4626DonationAttack is ERC4626DonationAttackTestBase {
         _doAttack();
 
         vm.prank(relayer);
-        vm.expectRevert("MC/exchange-rate-too-high");
+        vm.expectRevert("ERC4626Lib/exchange-rate-too-high");
         mainnetController.depositERC4626(address(morphoVault), 2_000_000e18, 0);
     }
 

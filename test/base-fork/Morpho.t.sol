@@ -170,7 +170,7 @@ contract MorphoDepositFailureTests is MorphoBaseTest {
         vm.stopPrank();
 
         vm.prank(relayer);
-        vm.expectRevert("FC/exchange-rate-too-high");
+        vm.expectRevert("ERC4626Lib/exchange-rate-too-high");
         foreignController.depositERC4626(MORPHO_VAULT_USDS, 25_000_000e18, 0);
 
         vm.startPrank(Base.SPARK_EXECUTOR);
@@ -188,7 +188,7 @@ contract MorphoDepositFailureTests is MorphoBaseTest {
         foreignController.setMaxExchangeRate(MORPHO_VAULT_USDS, 0, 0);
 
         vm.prank(relayer);
-        vm.expectRevert("FC/exchange-rate-too-high");
+        vm.expectRevert("ERC4626Lib/exchange-rate-too-high");
         foreignController.depositERC4626(MORPHO_VAULT_USDS, 1e18, 0);
     }
 
@@ -199,7 +199,7 @@ contract MorphoDepositFailureTests is MorphoBaseTest {
         uint256 atBoundaryShares   = usdsVault.convertToShares(25_000_000e18);
 
         vm.startPrank(relayer);
-        vm.expectRevert("FC/min-shares-out-not-met");
+        vm.expectRevert("ERC4626Lib/min-shares-out-not-met");
         foreignController.depositERC4626(MORPHO_VAULT_USDS, 25_000_000e18, overBoundaryShares);
 
         foreignController.depositERC4626(MORPHO_VAULT_USDS, 25_000_000e18, atBoundaryShares);
@@ -320,7 +320,7 @@ contract MorphoWithdrawFailureTests is MorphoBaseTest {
 
         foreignController.depositERC4626(MORPHO_VAULT_USDS, 10_000_000e18, 0);
 
-        vm.expectRevert("FC/shares-burned-too-high");
+        vm.expectRevert("ERC4626Lib/shares-burned-too-high");
         foreignController.withdrawERC4626(MORPHO_VAULT_USDS, 10_000_000e18, underBoundaryShares);
 
         foreignController.withdrawERC4626(MORPHO_VAULT_USDS, 10_000_000e18, atBoundaryShares);
@@ -505,7 +505,7 @@ contract MorphoRedeemFailureTests is MorphoBaseTest {
 
         foreignController.depositERC4626(MORPHO_VAULT_USDS, 10_000_000e18, 10_000_000e18);
 
-        vm.expectRevert("FC/min-assets-out-not-met");
+        vm.expectRevert("ERC4626Lib/min-assets-out-not-met");
         foreignController.redeemERC4626(MORPHO_VAULT_USDS, 10_000_000e18, overBoundaryAssets);
 
         foreignController.redeemERC4626(MORPHO_VAULT_USDS, 10_000_000e18, atBoundaryAssets);

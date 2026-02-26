@@ -103,7 +103,7 @@ contract MainnetControllerAddLiquidityCurveFailureTests is CurveTestBase {
         mainnetController.setMaxSlippage(CURVE_POOL, 0);
 
         vm.prank(relayer);
-        vm.expectRevert("MC/max-slippage-not-set");
+        vm.expectRevert("CurveLib/max-slippage-not-set");
         mainnetController.addLiquidityCurve(CURVE_POOL, amounts, minLpAmount);
     }
 
@@ -117,13 +117,13 @@ contract MainnetControllerAddLiquidityCurveFailureTests is CurveTestBase {
 
         vm.startPrank(relayer);
 
-        vm.expectRevert("MC/invalid-deposit-amounts");
+        vm.expectRevert("CurveLib/invalid-deposit-amounts");
         mainnetController.addLiquidityCurve(CURVE_POOL, amounts, minLpAmount);
 
         uint256[] memory amounts2 = new uint256[](1);
         amounts[0] = 1_000_000e6;
 
-        vm.expectRevert("MC/invalid-deposit-amounts");
+        vm.expectRevert("CurveLib/invalid-deposit-amounts");
         mainnetController.addLiquidityCurve(CURVE_POOL, amounts2, minLpAmount);
 
         vm.stopPrank();
@@ -145,7 +145,7 @@ contract MainnetControllerAddLiquidityCurveFailureTests is CurveTestBase {
 
         vm.startPrank(relayer);
 
-        vm.expectRevert("MC/min-amount-not-met");
+        vm.expectRevert("CurveLib/min-amount-not-met");
         mainnetController.addLiquidityCurve(CURVE_POOL, amounts, minLpAmount);
 
         minLpAmount = boundaryAmount;
@@ -433,7 +433,7 @@ contract MainnetControllerRemoveLiquidityCurveFailureTests is CurveTestBase {
         mainnetController.setMaxSlippage(CURVE_POOL, 0);
 
         vm.prank(relayer);
-        vm.expectRevert("MC/max-slippage-not-set");
+        vm.expectRevert("CurveLib/max-slippage-not-set");
         mainnetController.removeLiquidityCurve(CURVE_POOL, lpReturn, minWithdrawAmounts);
     }
 
@@ -447,13 +447,13 @@ contract MainnetControllerRemoveLiquidityCurveFailureTests is CurveTestBase {
 
         vm.startPrank(relayer);
 
-        vm.expectRevert("MC/invalid-min-withdraw-amounts");
+        vm.expectRevert("CurveLib/invalid-min-withdraw-amounts");
         mainnetController.removeLiquidityCurve(CURVE_POOL, lpReturn, minWithdrawAmounts);
 
         uint256[] memory minWithdrawAmounts2 = new uint256[](1);
         minWithdrawAmounts[0] = 1_000_000e6;
 
-        vm.expectRevert("MC/invalid-min-withdraw-amounts");
+        vm.expectRevert("CurveLib/invalid-min-withdraw-amounts");
         mainnetController.removeLiquidityCurve(CURVE_POOL, lpReturn, minWithdrawAmounts2);
 
         vm.stopPrank();
@@ -473,7 +473,7 @@ contract MainnetControllerRemoveLiquidityCurveFailureTests is CurveTestBase {
 
         vm.startPrank(relayer);
 
-        vm.expectRevert("MC/min-amount-not-met");
+        vm.expectRevert("CurveLib/min-amount-not-met");
         mainnetController.removeLiquidityCurve(CURVE_POOL, lpTokensReceived, minWithdrawAmounts);
 
         // Add one to get over the boundary
@@ -623,7 +623,7 @@ contract MainnetControllerSwapCurveFailureTests is CurveTestBase {
 
     function test_swapCurve_sameIndex() public {
         vm.prank(relayer);
-        vm.expectRevert("MC/invalid-indices");
+        vm.expectRevert("CurveLib/invalid-indices");
         mainnetController.swapCurve(CURVE_POOL, 1, 1, 1_000_000e6, 980_000e6);
     }
 
@@ -634,7 +634,7 @@ contract MainnetControllerSwapCurveFailureTests is CurveTestBase {
         deal(address(usdt), address(almProxy), 1_000_000e6);
 
         vm.prank(relayer);
-        vm.expectRevert("MC/index-too-high");
+        vm.expectRevert("CurveLib/index-too-high");
         mainnetController.swapCurve(CURVE_POOL, 2, 0, 1_000_000e6, 980_000e6);
 
         vm.prank(relayer);
@@ -648,7 +648,7 @@ contract MainnetControllerSwapCurveFailureTests is CurveTestBase {
         deal(address(usdc), address(almProxy), 1_000_000e6);
 
         vm.prank(relayer);
-        vm.expectRevert("MC/index-too-high");
+        vm.expectRevert("CurveLib/index-too-high");
         mainnetController.swapCurve(CURVE_POOL, 0, 2, 1_000_000e6, 980_000e6);
 
         vm.prank(relayer);
@@ -660,7 +660,7 @@ contract MainnetControllerSwapCurveFailureTests is CurveTestBase {
         mainnetController.setMaxSlippage(CURVE_POOL, 0);
 
         vm.prank(relayer);
-        vm.expectRevert("MC/max-slippage-not-set");
+        vm.expectRevert("CurveLib/max-slippage-not-set");
         mainnetController.swapCurve(CURVE_POOL, 1, 0, 1_000_000e6, 980_000e6);
     }
 
@@ -671,7 +671,7 @@ contract MainnetControllerSwapCurveFailureTests is CurveTestBase {
         deal(address(usdc), address(almProxy), 1_000_000e6);
 
         vm.prank(relayer);
-        vm.expectRevert("MC/min-amount-not-met");
+        vm.expectRevert("CurveLib/min-amount-not-met");
         mainnetController.swapCurve(CURVE_POOL, 0, 1, 1_000_000e6, 980_000e6 - 1);
 
         vm.prank(relayer);
@@ -685,7 +685,7 @@ contract MainnetControllerSwapCurveFailureTests is CurveTestBase {
         deal(address(usdt), address(almProxy), 1_000_000e6);
 
         vm.prank(relayer);
-        vm.expectRevert("MC/min-amount-not-met");
+        vm.expectRevert("CurveLib/min-amount-not-met");
         mainnetController.swapCurve(CURVE_POOL, 1, 0, 1_000_000e6, 980_000e6 - 1);
 
         vm.prank(relayer);

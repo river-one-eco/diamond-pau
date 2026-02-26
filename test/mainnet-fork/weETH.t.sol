@@ -131,7 +131,7 @@ contract MainnetControllerDepositToWeETHFailureTests is MainnetControllerWeETHTe
         uint256 minSharesOut = _getMinSharesOut(1_000e18);
 
         vm.prank(relayer);
-        vm.expectRevert("MC/slippage-too-high");
+        vm.expectRevert("WEETHLib/slippage-too-high");
         mainnetController.depositToWEETH(1_000e18, minSharesOut + 1);
 
         vm.prank(relayer);
@@ -260,7 +260,7 @@ contract MainnetControllerRequestWithdrawFromWeETHFailureTests is MainnetControl
         uint256 minEETHShares = _getMinEETHShares(expectedEEthBalance);
 
         vm.prank(relayer);
-        vm.expectRevert("MC/slippage-too-high");
+        vm.expectRevert("WEETHLib/slippage-too-high");
         mainnetController.requestWithdrawFromWEETH(
             weETHModule,
             500e18,
@@ -360,7 +360,7 @@ contract MainnetControllerClaimWithdrawalFromWeETHFailureTests is MainnetControl
     }
 
     function test_claimWithdrawalFromWeETH_failsWhenRequestRateLimitDoesNotExist() external {
-        vm.expectRevert("MC/invalid-action");
+        vm.expectRevert("WEETHLib/invalid-action");
         vm.prank(relayer);
         mainnetController.claimWithdrawalFromWEETH(makeAddr("invalid-weETHModule"), 1);
     }

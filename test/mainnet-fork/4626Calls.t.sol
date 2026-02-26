@@ -99,7 +99,7 @@ contract MainnetControllerDepositERC4626FailureTests is SUSDSTestBase {
         vm.stopPrank();
 
         vm.prank(relayer);
-        vm.expectRevert("MC/exchange-rate-too-high");
+        vm.expectRevert("ERC4626Lib/exchange-rate-too-high");
         mainnetController.depositERC4626(address(susds), 5_000_000e18, 0);
 
         vm.startPrank(Ethereum.SPARK_PROXY);
@@ -122,7 +122,7 @@ contract MainnetControllerDepositERC4626FailureTests is SUSDSTestBase {
         mainnetController.setMaxExchangeRate(address(susds), 0, 0);
 
         vm.prank(relayer);
-        vm.expectRevert("MC/exchange-rate-too-high");
+        vm.expectRevert("ERC4626Lib/exchange-rate-too-high");
         mainnetController.depositERC4626(address(susds), 5_000_000e18, 0);
     }
 
@@ -134,7 +134,7 @@ contract MainnetControllerDepositERC4626FailureTests is SUSDSTestBase {
 
         mainnetController.mintUSDS(5_000_000e18);
 
-        vm.expectRevert("MC/min-shares-out-not-met");
+        vm.expectRevert("ERC4626Lib/min-shares-out-not-met");
         mainnetController.depositERC4626(address(susds), 5_000_000e18, overBoundaryShares);
 
         mainnetController.depositERC4626(address(susds), 5_000_000e18, atBoundaryShares);
@@ -237,7 +237,7 @@ contract MainnetControllerWithdrawERC4626FailureTests is SUSDSTestBase {
         mainnetController.mintUSDS(2_000_000e18);
         mainnetController.depositERC4626(address(susds), 2_000_000e18, 0);
 
-        vm.expectRevert("MC/shares-burned-too-high");
+        vm.expectRevert("ERC4626Lib/shares-burned-too-high");
         mainnetController.withdrawERC4626(address(susds), 1_000_000e18, underBoundaryShares);
 
         mainnetController.withdrawERC4626(address(susds), 1_000_000e18, atBoundaryShares);
@@ -383,7 +383,7 @@ contract MainnetControllerRedeemERC4626FailureTests is SUSDSTestBase {
         uint256 overBoundaryAssets = susds.convertToAssets(shares) + 1;
         uint256 atBoundaryAssets   = susds.convertToAssets(shares);
 
-        vm.expectRevert("MC/min-assets-out-not-met");
+        vm.expectRevert("ERC4626Lib/min-assets-out-not-met");
         mainnetController.redeemERC4626(address(susds), shares, overBoundaryAssets);
 
         mainnetController.redeemERC4626(address(susds), shares, atBoundaryAssets);
