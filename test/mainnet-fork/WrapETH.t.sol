@@ -34,7 +34,7 @@ contract MainnetController_WrapAllProxyETH_Tests is ForkTestBase {
     }
 
     function test_wrapAllProxyETH_zeroBalance() external {
-        vm.skip(true); // TODO: Undo
+        vm.deal(almProxy, 0);
 
         assertEq(almProxy.balance,         0);
         assertEq(WETH.balanceOf(almProxy), 0);

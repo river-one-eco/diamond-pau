@@ -87,6 +87,8 @@ abstract contract WEETH_TestBase is ForkTestBase {
                 )
             )
         );
+
+        deal(almProxy, 0);
     }
 
     function _getBlock() internal override pure returns (uint256) {
@@ -161,8 +163,6 @@ contract MainnetController_WEETH_Deposit_Tests is WEETH_TestBase {
     }
 
     function test_depositToWEETH() external {
-        vm.skip(true); // TODO: Undo
-
         bytes32 key = mainnetController.LIMIT_WEETH_DEPOSIT();
 
         vm.prank(Ethereum.SPARK_PROXY);
@@ -463,8 +463,6 @@ contract MainnetController_WEETH_ClaimWithdrawal_Tests is WEETH_TestBase {
     }
 
     function test_claimWithdrawalFromWEETH() external {
-        vm.skip(true); // TODO: Undo
-
         bytes32 depositKey         = mainnetController.LIMIT_WEETH_DEPOSIT();
         bytes32 requestWithdrawKey = makeAddressKey(mainnetController.LIMIT_WEETH_REQUEST_WITHDRAW(), weethModule);
 
