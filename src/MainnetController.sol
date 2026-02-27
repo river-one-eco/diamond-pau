@@ -206,19 +206,19 @@ contract MainnetController is ReentrancyGuard, AccessControlEnumerable {
         );
     }
 
-    function setUSDSVault(address vault) external {
+    function setUSDSVault(address vault) external nonReentrant onlyRole(DEFAULT_ADMIN_ROLE) {
         usdsVault = vault;
     }
 
-    function setEthenaMinter(address minter) external {
+    function setEthenaMinter(address minter) external nonReentrant onlyRole(DEFAULT_ADMIN_ROLE) {
         ethenaMinter = minter;
     }
 
-    function setCCTPTokenMessenger(address messenger) external {
+    function setCCTPTokenMessenger(address messenger) external nonReentrant onlyRole(DEFAULT_ADMIN_ROLE) {
         cctpTokenMessenger = messenger;
     }
 
-    function setCCTPUSDC(address usdc) external {
+    function setCCTPUSDC(address usdc) external nonReentrant onlyRole(DEFAULT_ADMIN_ROLE) {
         cctpUSDC = usdc;
     }
 

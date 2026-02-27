@@ -122,15 +122,15 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
         ERC4626Lib.setMaxExchangeRate(maxExchangeRates, token, shares, maxExpectedAssets);
     }
 
-    function setPSM3(address psm) external {
+    function setPSM3(address psm) external nonReentrant onlyRole(DEFAULT_ADMIN_ROLE) {
         psm3 = psm;
     }
 
-    function setCCTPTokenMessenger(address messenger) external {
+    function setCCTPTokenMessenger(address messenger) external nonReentrant onlyRole(DEFAULT_ADMIN_ROLE) {
         cctpTokenMessenger = messenger;
     }
 
-    function setCCTPUSDC(address usdc) external {
+    function setCCTPUSDC(address usdc) external nonReentrant onlyRole(DEFAULT_ADMIN_ROLE) {
         cctpUSDC = usdc;
     }
 
