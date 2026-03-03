@@ -21,7 +21,7 @@ interface IMerklDistributorLike {
 
 }
 
-contract Merkl_BaseTest is ForkTestBase {
+abstract contract Merkl_BaseTest is ForkTestBase {
 
     address internal constant A_ETH_RLUSD = 0x72eEED8043Dcce2Fe7CdAC950D928F80f472ab80;
 
@@ -58,7 +58,7 @@ contract MainnetController_Merkl_ToggleOperator_Tests is Merkl_BaseTest {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            RELAYER_ROLE
         ));
         mainnetController.toggleOperatorMerkl(operator1);
     }

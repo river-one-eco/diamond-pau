@@ -22,7 +22,7 @@ abstract contract RateLimits_TestBase is UnitTestBase {
 
         // Grant the CONTROLLER role to the `controller` address
         vm.prank(admin);
-        rateLimits.grantRole(CONTROLLER, controller);
+        rateLimits.grantRole(CONTROLLER_ROLE, controller);
     }
 
     function _assertLimitData(
@@ -348,6 +348,7 @@ contract RateLimits_GetCurrentRateLimit_Tests is RateLimits_TestBase {
         skipAmount       = _bound(skipAmount,       1, 365 days);
 
         vm.warp(currentTimestamp);
+
         vm.prank(admin);
         rateLimits.setRateLimitData(TEST_KEY1, maxAmount, slope, lastAmount, lastUpdated);
 
@@ -373,14 +374,14 @@ contract RateLimits_TriggerRateLimitDecrease_Tests is RateLimits_TestBase {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            CONTROLLER
+            CONTROLLER_ROLE
         ));
         rateLimits.triggerRateLimitDecrease(TEST_KEY1, 100);
 
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             admin,
-            CONTROLLER
+            CONTROLLER_ROLE
         ));
         vm.prank(admin);
         rateLimits.triggerRateLimitDecrease(TEST_KEY1, 100);
@@ -593,6 +594,7 @@ contract RateLimits_TriggerRateLimitDecrease_Tests is RateLimits_TestBase {
         skipAmount       = _bound(skipAmount,       1, 365 days);
 
         vm.warp(currentTimestamp);
+
         vm.prank(admin);
         rateLimits.setRateLimitData(TEST_KEY1, maxAmount, slope, lastAmount, lastUpdated);
 
@@ -645,6 +647,7 @@ contract RateLimits_TriggerRateLimitDecrease_Tests is RateLimits_TestBase {
         skipAmount       = _bound(skipAmount,       1, 365 days);
 
         vm.warp(currentTimestamp);
+
         vm.prank(admin);
         rateLimits.setRateLimitData(TEST_KEY1, maxAmount, slope, lastAmount, lastUpdated);
 
@@ -693,14 +696,14 @@ contract RateLimits_TriggerRateLimitIncrease_Tests is RateLimits_TestBase {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            CONTROLLER
+            CONTROLLER_ROLE
         ));
         rateLimits.triggerRateLimitIncrease(TEST_KEY1, 100);
 
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             admin,
-            CONTROLLER
+            CONTROLLER_ROLE
         ));
         vm.prank(admin);
         rateLimits.triggerRateLimitIncrease(TEST_KEY1, 100);

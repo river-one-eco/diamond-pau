@@ -22,9 +22,9 @@ contract MainnetController_RemoveRelayer_Tests is UnitTestBase {
 
         vm.startPrank(admin);
 
-        controller.grantRole(FREEZER, freezer);
-        controller.grantRole(RELAYER, relayer1);
-        controller.grantRole(RELAYER, relayer2);
+        controller.grantRole(FREEZER_ROLE, freezer);
+        controller.grantRole(RELAYER_ROLE, relayer1);
+        controller.grantRole(RELAYER_ROLE, relayer2);
 
         vm.stopPrank();
     }
@@ -39,22 +39,22 @@ contract MainnetController_RemoveRelayer_Tests is UnitTestBase {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            FREEZER
+            FREEZER_ROLE
         ));
         controller.removeRelayer(relayer);
 
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             admin,
-            FREEZER
+            FREEZER_ROLE
         ));
         vm.prank(admin);
         controller.removeRelayer(relayer);
     }
 
     function test_removeRelayer() external {
-        assertEq(controller.hasRole(RELAYER, relayer1), true);
-        assertEq(controller.hasRole(RELAYER, relayer2), true);
+        assertEq(controller.hasRole(RELAYER_ROLE, relayer1), true);
+        assertEq(controller.hasRole(RELAYER_ROLE, relayer2), true);
 
         vm.expectEmit(address(controller));
         emit MainnetController.RelayerRemoved(relayer1);
@@ -62,8 +62,8 @@ contract MainnetController_RemoveRelayer_Tests is UnitTestBase {
         vm.prank(freezer);
         controller.removeRelayer(relayer1);
 
-        assertEq(controller.hasRole(RELAYER, relayer1), false);
-        assertEq(controller.hasRole(RELAYER, relayer2), true);
+        assertEq(controller.hasRole(RELAYER_ROLE, relayer1), false);
+        assertEq(controller.hasRole(RELAYER_ROLE, relayer2), true);
 
         vm.record();
 
@@ -75,8 +75,8 @@ contract MainnetController_RemoveRelayer_Tests is UnitTestBase {
 
         _assertReentrancyGuardWrittenToTwice(address(controller));
 
-        assertEq(controller.hasRole(RELAYER, relayer1), false);
-        assertEq(controller.hasRole(RELAYER, relayer2), false);
+        assertEq(controller.hasRole(RELAYER_ROLE, relayer1), false);
+        assertEq(controller.hasRole(RELAYER_ROLE, relayer2), false);
     }
 
 }
@@ -93,9 +93,9 @@ contract ForeignController_RemoveRelayer_Tests is UnitTestBase {
 
         vm.startPrank(admin);
 
-        controller.grantRole(FREEZER, freezer);
-        controller.grantRole(RELAYER, relayer1);
-        controller.grantRole(RELAYER, relayer2);
+        controller.grantRole(FREEZER_ROLE, freezer);
+        controller.grantRole(RELAYER_ROLE, relayer1);
+        controller.grantRole(RELAYER_ROLE, relayer2);
 
         vm.stopPrank();
     }
@@ -110,22 +110,22 @@ contract ForeignController_RemoveRelayer_Tests is UnitTestBase {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            FREEZER
+            FREEZER_ROLE
         ));
         controller.removeRelayer(relayer);
 
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             admin,
-            FREEZER
+            FREEZER_ROLE
         ));
         vm.prank(admin);
         controller.removeRelayer(relayer);
     }
 
     function test_removeRelayer() external {
-        assertEq(controller.hasRole(RELAYER, relayer1), true);
-        assertEq(controller.hasRole(RELAYER, relayer2), true);
+        assertEq(controller.hasRole(RELAYER_ROLE, relayer1), true);
+        assertEq(controller.hasRole(RELAYER_ROLE, relayer2), true);
 
         vm.expectEmit(address(controller));
         emit ForeignController.RelayerRemoved(relayer1);
@@ -133,8 +133,8 @@ contract ForeignController_RemoveRelayer_Tests is UnitTestBase {
         vm.prank(freezer);
         controller.removeRelayer(relayer1);
 
-        assertEq(controller.hasRole(RELAYER, relayer1), false);
-        assertEq(controller.hasRole(RELAYER, relayer2), true);
+        assertEq(controller.hasRole(RELAYER_ROLE, relayer1), false);
+        assertEq(controller.hasRole(RELAYER_ROLE, relayer2), true);
 
         vm.record();
 
@@ -146,8 +146,8 @@ contract ForeignController_RemoveRelayer_Tests is UnitTestBase {
 
         _assertReentrancyGuardWrittenToTwice(address(controller));
 
-        assertEq(controller.hasRole(RELAYER, relayer1), false);
-        assertEq(controller.hasRole(RELAYER, relayer2), false);
+        assertEq(controller.hasRole(RELAYER_ROLE, relayer1), false);
+        assertEq(controller.hasRole(RELAYER_ROLE, relayer2), false);
     }
 
 }

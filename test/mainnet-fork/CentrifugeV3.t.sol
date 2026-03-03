@@ -12,7 +12,7 @@ import {
 
 import { ForkTestBase } from "./ForkTestBase.t.sol";
 
-contract CentrifugeV3_TestBase is ForkTestBase {
+abstract contract CentrifugeV3_TestBase is ForkTestBase {
 
     uint16 internal constant DESTINATION_CENTRIFUGE_ID = 5; // Avalanche Centrifuge ID
 
@@ -51,14 +51,14 @@ contract MainnetController_CentrifugeV3_TransferShares_Tests is CentrifugeV3_Tes
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            RELAYER_ROLE
         ));
         mainnetController.transferSharesCentrifuge(address(CENTRIFUGE_VAULT), 1_000_000e6, DESTINATION_CENTRIFUGE_ID);
     }
 
     function test_transferSharesCentrifuge_zeroMaxAmount() external {
-        vm.prank(RELAYER);
         vm.expectRevert("RateLimits/zero-maxAmount");
+        vm.prank(RELAYER);
         mainnetController.transferSharesCentrifuge(address(CENTRIFUGE_VAULT), 1_000_000e6, DESTINATION_CENTRIFUGE_ID);
     }
 

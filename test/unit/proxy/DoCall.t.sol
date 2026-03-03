@@ -27,7 +27,7 @@ abstract contract ALMProxy_Call_TestBase is UnitTestBase {
         almProxy = new ALMProxy(admin);
 
         vm.prank(admin);
-        almProxy.grantRole(CONTROLLER, controller);
+        almProxy.grantRole(CONTROLLER_ROLE, controller);
 
         target = address(new MockTarget());
     }
@@ -40,14 +40,14 @@ contract ALMProxy_DoCall_Tests is ALMProxy_Call_TestBase {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            CONTROLLER
+            CONTROLLER_ROLE
         ));
         almProxy.doCall(target, data);
 
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             admin,
-            CONTROLLER
+            CONTROLLER_ROLE
         ));
         vm.prank(admin);
         almProxy.doCall(target, data);
@@ -72,14 +72,14 @@ contract ALMProxy_DoCallWithValue_Tests is ALMProxy_Call_TestBase {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            CONTROLLER
+            CONTROLLER_ROLE
         ));
         almProxy.doCallWithValue(target, data, 1e18);
 
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             admin,
-            CONTROLLER
+            CONTROLLER_ROLE
         ));
         vm.prank(admin);
         almProxy.doCallWithValue(target, data, 1e18);
@@ -135,14 +135,14 @@ contract ALMProxy_DoDelegateCall_Tests is ALMProxy_Call_TestBase {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            CONTROLLER
+            CONTROLLER_ROLE
         ));
         almProxy.doDelegateCall(target, data);
 
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             admin,
-            CONTROLLER
+            CONTROLLER_ROLE
         ));
         vm.prank(admin);
         almProxy.doDelegateCall(target, data);
@@ -174,8 +174,8 @@ contract ALMProxy_Freezable_Tests is
         almProxy = new ALMProxyFreezable(admin);
 
         vm.startPrank(admin);
-        almProxy.grantRole(FREEZER,    freezer);
-        almProxy.grantRole(CONTROLLER, controller);
+        almProxy.grantRole(FREEZER_ROLE,    freezer);
+        almProxy.grantRole(CONTROLLER_ROLE, controller);
         vm.stopPrank();
     }
 

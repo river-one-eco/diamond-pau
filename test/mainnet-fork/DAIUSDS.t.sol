@@ -17,7 +17,7 @@ interface IERC20Like {
 
 }
 
-abstract contract DaiUsds_TestBase is ForkTestBase {
+abstract contract DAIUSDS_TestBase is ForkTestBase {
 
     IERC20Like internal constant DAI  = IERC20Like(Ethereum.DAI);
     IERC20Like internal constant USDS = IERC20Like(Ethereum.USDS);
@@ -34,7 +34,7 @@ abstract contract DaiUsds_TestBase is ForkTestBase {
 
 }
 
-contract MainnetController_DAIUSDS_SwapUSDSToDAI_Tests is DaiUsds_TestBase {
+contract MainnetController_DAIUSDS_SwapUSDSToDAI_Tests is DAIUSDS_TestBase {
 
     function test_swapUSDSToDAI_reentrancy() external {
         _setControllerEntered();
@@ -80,7 +80,7 @@ contract MainnetController_DAIUSDS_SwapUSDSToDAI_Tests is DaiUsds_TestBase {
 
 }
 
-contract MainnetController_DAIUSDS_SwapDAIToUSDS_Tests is DaiUsds_TestBase {
+contract MainnetController_DAIUSDS_SwapDAIToUSDS_Tests is DAIUSDS_TestBase {
 
     function test_swapDAIToUSDS_reentrancy() external {
         _setControllerEntered();

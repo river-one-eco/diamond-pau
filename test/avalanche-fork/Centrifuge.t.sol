@@ -28,7 +28,7 @@ interface IERC20Like {
 
 }
 
-contract Centrifuge_TestBase is ForkTestBase {
+abstract contract Centrifuge_TestBase is ForkTestBase {
 
     // Requests for Centrifuge pools are non-fungible and all have ID = 0
     uint256 internal constant REQUEST_ID = 0;
@@ -102,7 +102,7 @@ contract ForeignController_Centrifuge_RequestDepositERC7540_Tests is Centrifuge_
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            RELAYER_ROLE
         ));
         foreignController.requestDepositERC7540(address(CENTRIFUGE_VAULT), 1_000_000e6);
     }
@@ -173,7 +173,7 @@ contract ForeignController_Centrifuge_ClaimDepositERC7540_Tests is Centrifuge_Te
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            RELAYER_ROLE
         ));
         foreignController.claimDepositERC7540(address(CENTRIFUGE_VAULT));
     }
@@ -337,7 +337,7 @@ contract ForeignController_Centrifuge_CancelDepositERC7540_Tests is Centrifuge_T
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            RELAYER_ROLE
         ));
         foreignController.cancelCentrifugeDepositRequest(address(CENTRIFUGE_VAULT));
     }
@@ -387,7 +387,7 @@ contract ForeignController_Centrifuge_ClaimCancelDeposit_Tests is Centrifuge_Tes
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            RELAYER_ROLE
         ));
         foreignController.claimCentrifugeCancelDepositRequest(address(CENTRIFUGE_VAULT));
     }
@@ -477,7 +477,7 @@ contract ForeignController_Centrifuge_RequestRedeemERC7540_Tests is Centrifuge_T
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            RELAYER_ROLE
         ));
         foreignController.requestRedeemERC7540(address(CENTRIFUGE_VAULT), 1_000_000e6);
     }
@@ -557,7 +557,7 @@ contract ForeignController_Centrifuge_ClaimRedeemERC7540_Tests is Centrifuge_Tes
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            RELAYER_ROLE
         ));
         foreignController.claimRedeemERC7540(address(CENTRIFUGE_VAULT));
     }
@@ -755,7 +755,7 @@ contract ForeignController_Centrifuge_CancelRedeemRequest_Tests is Centrifuge_Te
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            RELAYER_ROLE
         ));
         foreignController.cancelCentrifugeRedeemRequest(address(CENTRIFUGE_VAULT));
     }
@@ -808,7 +808,7 @@ contract ForeignController_Centrifuge_ClaimCancelRedeemRequest_Tests is Centrifu
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            RELAYER_ROLE
         ));
         foreignController.claimCentrifugeCancelRedeemRequest(address(CENTRIFUGE_VAULT));
     }
@@ -910,7 +910,7 @@ contract ForeignController_Centrifuge_TransferShares_Tests is Centrifuge_TestBas
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            RELAYER_ROLE
         ));
         foreignController.transferSharesCentrifuge(address(CENTRIFUGE_VAULT), 1_000_000e6, DESTINATION_CENTRIFUGE_ID);
     }

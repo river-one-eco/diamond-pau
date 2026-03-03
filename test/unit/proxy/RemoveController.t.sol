@@ -26,8 +26,8 @@ abstract contract Freezable_RemoveController_TestBase is UnitTestBase {
         almProxyFreezable = new ALMProxyFreezable(admin);
 
         vm.startPrank(admin);
-        almProxyFreezable.grantRole(FREEZER,    freezer);
-        almProxyFreezable.grantRole(CONTROLLER, controller);
+        almProxyFreezable.grantRole(FREEZER_ROLE,    freezer);
+        almProxyFreezable.grantRole(CONTROLLER_ROLE, controller);
         vm.stopPrank();
 
         target = address(new MockTarget());
@@ -41,14 +41,14 @@ contract ALMProxy_Freezable_RemoveController_Tests is Freezable_RemoveController
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            FREEZER
+            FREEZER_ROLE
         ));
         almProxyFreezable.removeController(controller);
 
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             admin,
-            FREEZER
+            FREEZER_ROLE
         ));
         vm.prank(admin);
         almProxyFreezable.removeController(controller);
@@ -65,7 +65,7 @@ contract ALMProxy_Freezable_RemoveController_Tests is Freezable_RemoveController
         assertEq(abi.decode(returnData, (uint256)), 84);
 
         // Before has controller role
-        assertTrue(almProxyFreezable.hasRole(CONTROLLER, controller));
+        assertTrue(almProxyFreezable.hasRole(CONTROLLER_ROLE, controller));
 
         // Freezer comes in and removes controller.
         vm.expectEmit(address(almProxyFreezable));
@@ -75,13 +75,13 @@ contract ALMProxy_Freezable_RemoveController_Tests is Freezable_RemoveController
         almProxyFreezable.removeController(controller);
 
         // After no longer has controller role
-        assertFalse(almProxyFreezable.hasRole(CONTROLLER, controller));
+        assertFalse(almProxyFreezable.hasRole(CONTROLLER_ROLE, controller));
 
         // After can no longer call as controller
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             controller,
-            CONTROLLER
+            CONTROLLER_ROLE
         ));
         vm.prank(controller);
         almProxyFreezable.doCall(target, data);

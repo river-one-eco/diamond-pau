@@ -38,7 +38,7 @@ interface IYTLike {
 
 }
 
-contract Pendle_TestBase is ForkTestBase {
+abstract contract Pendle_TestBase is ForkTestBase {
 
     // sUSDe 25 Sep 2025 market
     IPendleMarketLike internal constant MARKET = IPendleMarketLike(0xA36b60A14A1A5247912584768C6e53E1a269a9F7);
@@ -109,7 +109,7 @@ contract MainnetController_Pendle_RedeemPT_Tests is Pendle_TestBase {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            RELAYER_ROLE
         ));
         mainnetController.redeemPendlePT(address(MARKET), 500_000e18, 1);
     }
@@ -206,7 +206,7 @@ contract MainnetController_Pendle_RedeemPT_Tests is Pendle_TestBase {
 
     }
 
-    function test_redeemPendlePT_sUSDe() external {
+    function test_redeemPendlePT_SUSDE() external {
         // Default Pendle market used in tests is already a sUSDe market
 
         address ptDonor = PT_WHALE;
@@ -243,7 +243,7 @@ contract MainnetController_Pendle_RedeemPT_Tests is Pendle_TestBase {
         assertEq(yieldToken.balanceOf(almProxy),     1_000_000e18 * 1e18 / pyIndexCurrent);
     }
 
-    function test_redeemPendlePT_USDe() external {
+    function test_redeemPendlePT_USDE() external {
         IPendleMarketLike market = IPendleMarketLike(0x6d98a2b6CDbF44939362a3E99793339Ba2016aF4);
 
         redeemKey = makeAddressKey(
@@ -290,7 +290,7 @@ contract MainnetController_Pendle_RedeemPT_Tests is Pendle_TestBase {
         assertEq(yieldToken.balanceOf(almProxy),     1_000_000e18);
     }
 
-    function test_redeemPendlePT_stETH() external {
+    function test_redeemPendlePT_STETH() external {
         IPendleMarketLike market = IPendleMarketLike(0xC374f7eC85F8C7DE3207a10bB1978bA104bdA3B2);
 
         redeemKey = makeAddressKey(
@@ -313,6 +313,7 @@ contract MainnetController_Pendle_RedeemPT_Tests is Pendle_TestBase {
         assertEq(yieldToken.balanceOf(almProxy),     0);
 
         vm.warp(market.expiry());
+
         uint256 pyIndexCurrent = IYTLike(yt).pyIndexCurrent();
         uint256 exactAmountOut = 5e18 * 1e18 / pyIndexCurrent;
 
@@ -323,6 +324,7 @@ contract MainnetController_Pendle_RedeemPT_Tests is Pendle_TestBase {
         assertEq(yieldToken.balanceOf(almProxy),     5e18 * 1e18 / pyIndexCurrent);
 
         vm.warp(block.timestamp + 14 days);
+
         pyIndexCurrent = IYTLike(yt).pyIndexCurrent();
         exactAmountOut = 5e18 * 1e18 / pyIndexCurrent;
 

@@ -38,7 +38,7 @@ interface IYTLike {
 
 }
 
-contract Pendle_TestBase is ForkTestBase {
+abstract contract Pendle_TestBase is ForkTestBase {
 
     // USDe 11 Dec 2025 market
     IPendleMarketLike internal constant MARKET = IPendleMarketLike(0x8991847176b1D187e403dd92a4E55fC8d7684538);
@@ -109,7 +109,7 @@ contract ForeignController_Pendle_RedeemPT_Tests is Pendle_TestBase {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            RELAYER_ROLE
         ));
         foreignController.redeemPendlePT(address(MARKET), 50_000e18, 1);
     }

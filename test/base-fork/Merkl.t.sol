@@ -21,7 +21,7 @@ interface IMerklDistributorLike {
 
 }
 
-contract Merkl_BaseTest is ForkTestBase {
+abstract contract Merkl_BaseTest is ForkTestBase {
 
     address internal operator1 = makeAddr("operator1");
     address internal operator2 = makeAddr("operator2");
@@ -52,7 +52,7 @@ contract ForeignController_Merkl_ToggleOperator_Tests is Merkl_BaseTest {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            RELAYER_ROLE
         ));
         foreignController.toggleOperatorMerkl(operator1);
     }
