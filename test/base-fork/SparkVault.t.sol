@@ -107,6 +107,7 @@ contract ForeignController_SparkVault_TakeFrom_Tests is SparkVault_TestBase {
 
     function test_takeFromSparkVault_rateLimitBoundary() external {
         deal(Base.USDC, user, 10_000_000e6);
+
         vm.startPrank(user);
         USDC_BASE.approve(address(sparkVault), 10_000_000e6);
         sparkVault.deposit(10_000_000e6, user);
@@ -125,6 +126,7 @@ contract ForeignController_SparkVault_TakeFrom_Tests is SparkVault_TestBase {
 
     function test_takeFromSparkVault_rateLimited() external {
         deal(Base.USDC, user, 10_000_000e6);
+
         vm.startPrank(user);
         USDC_BASE.approve(address(sparkVault), 10_000_000e6);
         sparkVault.deposit(10_000_000e6, user);
@@ -185,6 +187,7 @@ contract ForeignController_SparkVault_TakeFrom_Tests is SparkVault_TestBase {
         takeAmount    = _bound(depositAmount, 1e18, depositAmount);
 
         deal(Base.USDC, user, depositAmount);
+
         vm.startPrank(user);
         USDC_BASE.approve(address(sparkVault), depositAmount);
         sparkVault.deposit(depositAmount, user);
@@ -308,6 +311,7 @@ contract ForeignController_SparkVault_TakeFrom_E2ETests is SparkVault_TestBase {
         // Step 2: Deposit usdc into the spark vault
 
         deal(Base.USDC, user, 10_000_000e6);
+
         vm.startPrank(user);
         USDC_BASE.approve(address(sparkVault), 10_000_000e6);
         sparkVault.deposit(10_000_000e6, user);

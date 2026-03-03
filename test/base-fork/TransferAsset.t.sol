@@ -96,8 +96,8 @@ contract ForeignController_TransferAsset_Tests is TransferAsset_TestBase {
 
         deal(address(token), almProxy, 1_000_000e18);
 
-        vm.prank(RELAYER);
         vm.expectRevert("TransferAssetLib/transfer-failed");
+        vm.prank(RELAYER);
         foreignController.transferAsset(address(token), receiver, 1_000_000e18);
     }
 
@@ -118,7 +118,7 @@ contract ForeignController_TransferAsset_Tests is TransferAsset_TestBase {
         assertEq(USDC.balanceOf(almProxy), 0);
     }
 
-    function test_transferAsset_successNoReturnData() external {
+    function test_transferAsset_noReturnData() external {
         MockTokenReturnNull token = new MockTokenReturnNull("Token", "TKN", 6);
 
         vm.startPrank(Base.SPARK_EXECUTOR);

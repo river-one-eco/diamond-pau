@@ -3,7 +3,7 @@ pragma solidity ^0.8.21;
 
 import { Test } from "../../lib/forge-std/src/Test.sol";
 
-import { Base } from "../../lib/spark-address-registry/src/Base.sol";
+import { Avalanche } from "../../lib/grove-address-registry/src/Avalanche.sol";
 
 import { ForeignControllerDeploy }       from "../../deploy/ControllerDeploy.sol";
 import { ControllerInstance }            from "../../deploy/ControllerInstance.sol";
@@ -13,7 +13,7 @@ import { ALMProxy }          from "../../src/ALMProxy.sol";
 import { ForeignController } from "../../src/ForeignController.sol";
 import { RateLimits }        from "../../src/RateLimits.sol";
 
-abstract contract ForkTestBase is Test {
+contract ForkTestBase is Test {
 
     /**********************************************************************************************/
     /*** Constants/state variables                                                              ***/
@@ -29,8 +29,8 @@ abstract contract ForkTestBase is Test {
     bytes32 internal constant FREEZER_ROLE    = keccak256("FREEZER");
     bytes32 internal constant RELAYER_ROLE    = keccak256("RELAYER");
 
-    address internal constant FREEZER = Base.ALM_FREEZER_MULTISIG;
-    address internal constant RELAYER = Base.ALM_RELAYER_MULTISIG;
+    address internal constant FREEZER = Avalanche.ALM_FREEZER;
+    address internal constant RELAYER = Avalanche.ALM_RELAYER;
 
     /**********************************************************************************************/
     /*** ALM system deployments                                                                 ***/
@@ -46,9 +46,9 @@ abstract contract ForkTestBase is Test {
     /**********************************************************************************************/
 
     function setUp() public virtual {
-        vm.createSelectFork(getChain('base').rpcUrl, _getBlock());
+        vm.createSelectFork(getChain('avalanche').rpcUrl, _getBlock());
 
-        ControllerInstance memory controllerInst = ForeignControllerDeploy.deployFull(Base.SPARK_EXECUTOR);
+        ControllerInstance memory controllerInst = ForeignControllerDeploy.deployFull(Avalanche.GROVE_EXECUTOR);
 
         almProxy          = payable(controllerInst.almProxy);
         rateLimits        = RateLimits(controllerInst.rateLimits);
@@ -64,12 +64,12 @@ abstract contract ForkTestBase is Test {
         });
 
         Init.CheckAddressParams memory checkAddresses = Init.CheckAddressParams({
-            admin      : Base.SPARK_EXECUTOR,
+            admin      : Avalanche.GROVE_EXECUTOR,
             proxy      : almProxy,
             rateLimits : address(rateLimits)
         });
 
-        vm.startPrank(Base.SPARK_EXECUTOR);
+        vm.startPrank(Avalanche.GROVE_EXECUTOR);
 
         Init.initAlmSystem(controllerInst, configAddresses, checkAddresses);
 
@@ -78,15 +78,7 @@ abstract contract ForkTestBase is Test {
 
     // Default configuration for the fork, can be overridden in inheriting tests
     function _getBlock() internal virtual pure returns (uint256) {
-        return 20782500;  // October 8, 2024
-    }
-
-    function _absSubtraction(uint256 a, uint256 b) internal pure returns (uint256) {
-        return a > b ? a - b : b - a;
-    }
-
-    function _setControllerEntered() internal {
-        vm.store(address(foreignController), _REENTRANCY_GUARD_SLOT, _REENTRANCY_GUARD_ENTERED);
+        return 65896755;  // July 22, 2025
     }
 
     function _assertReentrancyGuardWrittenToTwice() internal {

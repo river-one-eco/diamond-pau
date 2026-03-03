@@ -67,7 +67,7 @@ contract WEETHModule_Initialize_Tests is WEETHModule_TestBase {
         implementation.initialize(admin, almProxy);
     }
 
-    function test_initialize_success() external {
+    function test_initialize() external {
         WEETHModule weethModule = WEETHModule(
             payable(
                 address(

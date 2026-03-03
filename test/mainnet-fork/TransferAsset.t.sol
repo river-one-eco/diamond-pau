@@ -119,7 +119,7 @@ contract MainnetController_TransferAsset_Tests is TransferAsset_TestBase {
         assertEq(USDC.balanceOf(almProxy), 0);
     }
 
-    function test_transferAsset_successNoReturnData() external {
+    function test_transferAsset_noReturnData() external {
         vm.startPrank(Ethereum.SPARK_PROXY);
 
         rateLimits.setRateLimitData(

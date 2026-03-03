@@ -170,9 +170,8 @@ contract MainnetController_InitAndUpgrade_Tests is InitAndUpgrade_TestBase {
         configAddresses.oldController = oldController;
 
         // Revoke the old controller address in ALM proxy
-        vm.startPrank(Ethereum.SPARK_PROXY);
+        vm.prank(Ethereum.SPARK_PROXY);
         ALMProxy(almProxy).revokeRole(CONTROLLER_ROLE, configAddresses.oldController);
-        vm.stopPrank();
 
         // Try to upgrade with the old controller address that is doesn't have the CONTROLLER role
         vm.expectRevert("MainnetControllerInit/old-controller-not-almProxy-controller");
@@ -183,9 +182,8 @@ contract MainnetController_InitAndUpgrade_Tests is InitAndUpgrade_TestBase {
         configAddresses.oldController = oldController;
 
         // Revoke the old controller address in rate limits
-        vm.startPrank(Ethereum.SPARK_PROXY);
+        vm.prank(Ethereum.SPARK_PROXY);
         rateLimits.revokeRole(CONTROLLER_ROLE, configAddresses.oldController);
-        vm.stopPrank();
 
         // Try to upgrade with the old controller address that is doesn't have the CONTROLLER role
         vm.expectRevert("MainnetControllerInit/old-controller-not-rateLimits-controller");

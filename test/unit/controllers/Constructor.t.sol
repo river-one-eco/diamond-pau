@@ -10,7 +10,7 @@ import { UnitTestBase } from "../UnitTestBase.t.sol";
 
 contract MainnetController_Constructor_Tests is UnitTestBase {
 
-    function test_constructor() public {
+    function test_constructor() external {
         MainnetController mainnetController = new MainnetController(
             admin,
             makeAddr("almProxy"),
@@ -27,7 +27,7 @@ contract MainnetController_Constructor_Tests is UnitTestBase {
 
 contract ForeignController_Constructor_Tests is UnitTestBase {
 
-    function test_constructor() public {
+    function test_constructor() external {
         ForeignController foreignController = new ForeignController(
             admin,
             makeAddr("almProxy"),

@@ -852,7 +852,7 @@ contract RateLimits_TriggerRateLimitIncrease_Tests is RateLimits_TestBase {
         uint256 lastAmount,
         uint256 lastUpdated,
         uint256 skipAmount
-    ) public {
+    ) external {
         currentTimestamp = _bound(currentTimestamp, 1, 1000 * 365 days);
         maxAmount        = _bound(maxAmount,        1, 1e12 * 1e18);
         slope            = _bound(slope,            1, 1e12 * 1e18);

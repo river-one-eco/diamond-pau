@@ -5,7 +5,7 @@ import { Test } from "../../lib/forge-std/src/Test.sol";
 
 import { Ethereum } from "../../lib/spark-address-registry/src/Ethereum.sol";
 
-import { Domain, DomainHelpers } from "../../lib/xchain-helpers/src/testing/Domain.sol";
+import { Domain, DomainHelpers } from "../../lib/grove-xchain-helpers/src/testing/Domain.sol";
 
 import { MainnetControllerDeploy }       from "../../deploy/ControllerDeploy.sol";
 import { ControllerInstance }            from "../../deploy/ControllerInstance.sol";
