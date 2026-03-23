@@ -1,28 +1,66 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity >=0.8.0;
+pragma solidity ^0.8.21;
 
-import { IAToken }            from "aave-v3-origin/src/core/contracts/interfaces/IAToken.sol";
-import { IPool as IAavePool } from "aave-v3-origin/src/core/contracts/interfaces/IPool.sol";
-import { DataTypes }          from "aave-v3-origin/src/core/contracts/protocol/libraries/types/DataTypes.sol";
-import { IPoolConfigurator }  from "aave-v3-origin/src/core/contracts/interfaces/IPoolConfigurator.sol";
+import { DataTypes } from "../../lib/aave-v3-origin/src/core/contracts/protocol/libraries/types/DataTypes.sol";
 
 import { ReentrancyGuard } from "../../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
-import { SparkLend } from "lib/spark-address-registry/src/SparkLend.sol";
+import { Ethereum }  from "../../lib/spark-address-registry/src/Ethereum.sol";
+import { SparkLend } from "../../lib/spark-address-registry/src/SparkLend.sol";
 
-import "./ForkTestBase.t.sol";
+import { makeAddressKey } from "../../src/RateLimitHelpers.sol";
 
-contract AaveV3MainMarketBaseTest is ForkTestBase {
+import { ForkTestBase } from "./ForkTestBase.t.sol";
 
-    address constant ATOKEN_USDS = 0x32a6268f9Ba3642Dda7892aDd74f1D34469A4259;
-    address constant ATOKEN_USDC = 0x98C23E9d8f34FEFb1B7BD6a91B7FF122F4e16F5c;
-    address constant POOL        = 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2;
+interface IAavePoolLike {
 
-    IAToken ausds = IAToken(ATOKEN_USDS);
-    IAToken ausdc = IAToken(ATOKEN_USDC);
+    function flashLoan(
+        address            receiverAddress,
+        address[] calldata assets,
+        uint256[] calldata amounts,
+        uint256[] calldata interestRateModes,
+        address            onBehalfOf,
+        bytes     calldata params,
+        uint16             referralCode
+    ) external;
 
-    uint256 startingAUSDSBalance;
-    uint256 startingAUSDCBalance;
+    function supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode) external;
+
+    function withdraw(address asset, uint256 amount, address to) external;
+
+    function getReserveData(address asset) external view returns (DataTypes.ReserveDataLegacy memory);
+
+}
+
+interface IERC20Like {
+
+    function approve(address spender, uint256 amount) external;
+
+    function transfer(address to, uint256 amount) external;
+
+    function balanceOf(address account) external view returns (uint256);
+
+    function totalSupply() external view returns (uint256);
+
+}
+
+interface IPoolConfiguratorLike {
+
+    function updateFlashloanPremiumTotal(uint128 newFlashloanPremiumTotal) external;
+
+}
+
+abstract contract AaveV3_TestBase is ForkTestBase {
+
+    address internal constant ATOKEN_USDS = 0x32a6268f9Ba3642Dda7892aDd74f1D34469A4259;
+    address internal constant ATOKEN_USDC = 0x98C23E9d8f34FEFb1B7BD6a91B7FF122F4e16F5c;
+    address internal constant POOL        = 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2;
+
+    IERC20Like internal constant AUSDS = IERC20Like(ATOKEN_USDS);
+    IERC20Like internal constant AUSDC = IERC20Like(ATOKEN_USDC);
+
+    uint256 internal startingAUSDSBalance;
+    uint256 internal startingAUSDCBalance;
 
     function setUp() public override {
         super.setUp();
@@ -30,34 +68,25 @@ contract AaveV3MainMarketBaseTest is ForkTestBase {
         vm.startPrank(Ethereum.SPARK_PROXY);
 
         rateLimits.setRateLimitData(
-            RateLimitHelpers.makeAddressKey(
-                mainnetController.LIMIT_AAVE_DEPOSIT(),
-                ATOKEN_USDS
-            ),
+            makeAddressKey(mainnetController.LIMIT_AAVE_DEPOSIT(), ATOKEN_USDS),
             25_000_000e18,
             uint256(5_000_000e18) / 1 days
         );
+
         rateLimits.setRateLimitData(
-            RateLimitHelpers.makeAddressKey(
-                mainnetController.LIMIT_AAVE_DEPOSIT(),
-                ATOKEN_USDC
-            ),
+            makeAddressKey(mainnetController.LIMIT_AAVE_DEPOSIT(), ATOKEN_USDC),
             25_000_000e6,
             uint256(5_000_000e6) / 1 days
         );
+
         rateLimits.setRateLimitData(
-            RateLimitHelpers.makeAddressKey(
-                mainnetController.LIMIT_AAVE_WITHDRAW(),
-                ATOKEN_USDS
-            ),
+            makeAddressKey(mainnetController.LIMIT_AAVE_WITHDRAW(), ATOKEN_USDS),
             10_000_000e18,
             uint256(5_000_000e18) / 1 days
         );
+
         rateLimits.setRateLimitData(
-            RateLimitHelpers.makeAddressKey(
-                mainnetController.LIMIT_AAVE_WITHDRAW(),
-                ATOKEN_USDC
-            ),
+            makeAddressKey(mainnetController.LIMIT_AAVE_WITHDRAW(), ATOKEN_USDC),
             10_000_000e6,
             uint256(5_000_000e6) / 1 days
         );
@@ -67,8 +96,8 @@ contract AaveV3MainMarketBaseTest is ForkTestBase {
 
         vm.stopPrank();
 
-        startingAUSDCBalance = usdc.balanceOf(address(ausdc));
-        startingAUSDSBalance = usds.balanceOf(address(ausds));
+        startingAUSDCBalance = usdc.balanceOf(ATOKEN_USDC);
+        startingAUSDSBalance = usds.balanceOf(ATOKEN_USDS);
     }
 
     function _getBlock() internal pure override returns (uint256) {
@@ -79,7 +108,7 @@ contract AaveV3MainMarketBaseTest is ForkTestBase {
 
 // NOTE: Only testing USDS for non-rate limit failures as it doesn't matter which asset is used
 
-contract AaveV3MainMarketDepositFailureTests is AaveV3MainMarketBaseTest {
+contract MainnetController_AaveV3_Deposit_Tests is AaveV3_TestBase {
 
     function test_depositAave_reentrancy() external {
         _setControllerEntered();
@@ -97,8 +126,8 @@ contract AaveV3MainMarketDepositFailureTests is AaveV3MainMarketBaseTest {
     }
 
     function test_depositAave_zeroMaxAmount() external {
-        vm.prank(relayer);
         vm.expectRevert("RateLimits/zero-maxAmount");
+        vm.prank(relayer);
         mainnetController.depositAave(makeAddr("fake-token"), 1e18);
     }
 
@@ -106,16 +135,16 @@ contract AaveV3MainMarketDepositFailureTests is AaveV3MainMarketBaseTest {
         vm.prank(Ethereum.SPARK_PROXY);
         mainnetController.setMaxSlippage(ATOKEN_USDS, 0);
 
+        vm.expectRevert("AaveLib/max-slippage-not-set");
         vm.prank(relayer);
-        vm.expectRevert("MC/max-slippage-not-set");
         mainnetController.depositAave(ATOKEN_USDS, 1e18);
     }
 
     function test_depositAave_usdsRateLimitedBoundary() external {
         deal(Ethereum.USDS, address(almProxy), 25_000_000e18 + 1);
 
-        vm.prank(relayer);
         vm.expectRevert("RateLimits/rate-limit-exceeded");
+        vm.prank(relayer);
         mainnetController.depositAave(ATOKEN_USDS, 25_000_000e18 + 1);
 
         vm.prank(relayer);
@@ -125,8 +154,8 @@ contract AaveV3MainMarketDepositFailureTests is AaveV3MainMarketBaseTest {
     function test_depositAave_usdcRateLimitedBoundary() external {
         deal(Ethereum.USDC, address(almProxy), 25_000_000e6 + 1);
 
-        vm.prank(relayer);
         vm.expectRevert("RateLimits/rate-limit-exceeded");
+        vm.prank(relayer);
         mainnetController.depositAave(ATOKEN_USDC, 25_000_000e6 + 1);
 
         vm.prank(relayer);
@@ -140,8 +169,8 @@ contract AaveV3MainMarketDepositFailureTests is AaveV3MainMarketBaseTest {
         vm.prank(Ethereum.SPARK_PROXY);
         mainnetController.setMaxSlippage(ATOKEN_USDS, 1e18 + 1);
 
+        vm.expectRevert("AaveLib/slippage-too-high");
         vm.prank(relayer);
-        vm.expectRevert("MC/slippage-too-high");
         mainnetController.depositAave(ATOKEN_USDS, 5_000_000e18);
 
         vm.prank(Ethereum.SPARK_PROXY);
@@ -160,8 +189,8 @@ contract AaveV3MainMarketDepositFailureTests is AaveV3MainMarketBaseTest {
         vm.prank(Ethereum.SPARK_PROXY);
         mainnetController.setMaxSlippage(ATOKEN_USDC, 1e18 + 0.2e6);
 
+        vm.expectRevert("AaveLib/slippage-too-high");
         vm.prank(relayer);
-        vm.expectRevert("MC/slippage-too-high");
         mainnetController.depositAave(ATOKEN_USDC, 5_000_000e6);
 
         vm.prank(Ethereum.SPARK_PROXY);
@@ -171,18 +200,14 @@ contract AaveV3MainMarketDepositFailureTests is AaveV3MainMarketBaseTest {
         mainnetController.depositAave(ATOKEN_USDC, 5_000_000e6);
     }
 
-}
-
-contract AaveV3MainMarketDepositSuccessTests is AaveV3MainMarketBaseTest {
-
-    function test_depositAave_usds() public {
+    function test_depositAave_usds() external {
         deal(Ethereum.USDS, address(almProxy), 1_000_000e18);
 
         assertEq(usds.allowance(address(almProxy), POOL), 0);
 
-        assertEq(ausds.balanceOf(address(almProxy)), 0);
+        assertEq(AUSDS.balanceOf(address(almProxy)), 0);
         assertEq(usds.balanceOf(address(almProxy)),  1_000_000e18);
-        assertEq(usds.balanceOf(address(ausds)),     startingAUSDSBalance);
+        assertEq(usds.balanceOf(ATOKEN_USDS),        startingAUSDSBalance);
 
         vm.record();
 
@@ -193,19 +218,19 @@ contract AaveV3MainMarketDepositSuccessTests is AaveV3MainMarketBaseTest {
 
         assertEq(usds.allowance(address(almProxy), POOL), 0);
 
-        assertEq(ausds.balanceOf(address(almProxy)), 1_000_000e18);
+        assertEq(AUSDS.balanceOf(address(almProxy)), 1_000_000e18);
         assertEq(usds.balanceOf(address(almProxy)),  0);
-        assertEq(usds.balanceOf(address(ausds)),     startingAUSDSBalance + 1_000_000e18);
+        assertEq(usds.balanceOf(ATOKEN_USDS),        startingAUSDSBalance + 1_000_000e18);
     }
 
-    function test_depositAave_usdc() public {
+    function test_depositAave_usdc() external {
         deal(Ethereum.USDC, address(almProxy), 1_000_000e6);
 
         assertEq(usdc.allowance(address(almProxy), POOL), 0);
 
-        assertEq(ausdc.balanceOf(address(almProxy)), 0);
+        assertEq(AUSDC.balanceOf(address(almProxy)), 0);
         assertEq(usdc.balanceOf(address(almProxy)),  1_000_000e6);
-        assertEq(usdc.balanceOf(address(ausdc)),     startingAUSDCBalance);
+        assertEq(usdc.balanceOf(ATOKEN_USDC),        startingAUSDCBalance);
 
         vm.record();
 
@@ -216,14 +241,14 @@ contract AaveV3MainMarketDepositSuccessTests is AaveV3MainMarketBaseTest {
 
         assertEq(usdc.allowance(address(almProxy), POOL), 0);
 
-        assertEq(ausdc.balanceOf(address(almProxy)), 1_000_000e6);
+        assertEq(AUSDC.balanceOf(address(almProxy)), 1_000_000e6);
         assertEq(usdc.balanceOf(address(almProxy)),  0);
-        assertEq(usdc.balanceOf(address(ausdc)),     startingAUSDCBalance + 1_000_000e6);
+        assertEq(usdc.balanceOf(ATOKEN_USDC),        startingAUSDCBalance + 1_000_000e6);
     }
 
 }
 
-contract AaveV3MainMarketWithdrawFailureTests is AaveV3MainMarketBaseTest {
+contract MainnetController_AaveV3_Withdraw_Tests is AaveV3_TestBase {
 
     function test_withdrawAave_reentrancy() external {
         _setControllerEntered();
@@ -244,10 +269,7 @@ contract AaveV3MainMarketWithdrawFailureTests is AaveV3MainMarketBaseTest {
         // Longer setup because rate limit revert is at the end of the function
         vm.startPrank(Ethereum.SPARK_PROXY);
         rateLimits.setRateLimitData(
-            RateLimitHelpers.makeAddressKey(
-                mainnetController.LIMIT_AAVE_WITHDRAW(),
-                ATOKEN_USDC
-            ),
+            makeAddressKey(mainnetController.LIMIT_AAVE_WITHDRAW(), ATOKEN_USDC),
             0,
             0
         );
@@ -258,8 +280,8 @@ contract AaveV3MainMarketWithdrawFailureTests is AaveV3MainMarketBaseTest {
         vm.prank(relayer);
         mainnetController.depositAave(ATOKEN_USDC, 1_000_000e6);
 
-        vm.prank(relayer);
         vm.expectRevert("RateLimits/zero-maxAmount");
+        vm.prank(relayer);
         mainnetController.withdrawAave(ATOKEN_USDC, 1_000_000e6);
     }
 
@@ -293,19 +315,9 @@ contract AaveV3MainMarketWithdrawFailureTests is AaveV3MainMarketBaseTest {
         vm.stopPrank();
     }
 
-}
-
-contract AaveV3MainMarketWithdrawSuccessTests is AaveV3MainMarketBaseTest {
-
-    function test_withdrawAave_usds() public {
-        bytes32 depositKey = RateLimitHelpers.makeAddressKey(
-            mainnetController.LIMIT_AAVE_DEPOSIT(),
-            ATOKEN_USDS
-        );
-        bytes32 withdrawKey = RateLimitHelpers.makeAddressKey(
-            mainnetController.LIMIT_AAVE_WITHDRAW(),
-            ATOKEN_USDS
-        );
+    function test_withdrawAave_usds() external {
+        bytes32 depositKey  = makeAddressKey(mainnetController.LIMIT_AAVE_DEPOSIT(),  ATOKEN_USDS);
+        bytes32 withdrawKey = makeAddressKey(mainnetController.LIMIT_AAVE_WITHDRAW(), ATOKEN_USDS);
 
         deal(Ethereum.USDS, address(almProxy), 1_000_000e18);
         vm.prank(relayer);
@@ -313,13 +325,13 @@ contract AaveV3MainMarketWithdrawSuccessTests is AaveV3MainMarketBaseTest {
 
         skip(1 hours);
 
-        uint256 aTokenBalance = ausds.balanceOf(address(almProxy));
+        uint256 aTokenBalance = AUSDS.balanceOf(address(almProxy));
 
         assertEq(aTokenBalance, 1_000_008.690632523560813345e18);
 
-        assertEq(ausds.balanceOf(address(almProxy)), aTokenBalance);
+        assertEq(AUSDS.balanceOf(address(almProxy)), aTokenBalance);
         assertEq(usds.balanceOf(address(almProxy)),  0);
-        assertEq(usds.balanceOf(address(ausds)),     startingAUSDSBalance + 1_000_000e18);
+        assertEq(usds.balanceOf(ATOKEN_USDS),        startingAUSDSBalance + 1_000_000e18);
 
         uint256 startingDepositRateLimit = rateLimits.getCurrentRateLimit(depositKey);
 
@@ -336,9 +348,9 @@ contract AaveV3MainMarketWithdrawSuccessTests is AaveV3MainMarketBaseTest {
 
         _assertReentrancyGuardWrittenToTwice();
 
-        assertEq(ausds.balanceOf(address(almProxy)), aTokenBalance - 400_000e18);
+        assertEq(AUSDS.balanceOf(address(almProxy)), aTokenBalance - 400_000e18);
         assertEq(usds.balanceOf(address(almProxy)),  400_000e18);
-        assertEq(usds.balanceOf(address(ausds)),     startingAUSDSBalance + 600_000e18);  // 1m - 400k
+        assertEq(usds.balanceOf(ATOKEN_USDS),        startingAUSDSBalance + 600_000e18);  // 1m - 400k
 
         assertEq(rateLimits.getCurrentRateLimit(depositKey),  startingDepositRateLimit + 400_000e18);
         assertEq(rateLimits.getCurrentRateLimit(withdrawKey), 9_600_000e18);
@@ -350,23 +362,17 @@ contract AaveV3MainMarketWithdrawSuccessTests is AaveV3MainMarketBaseTest {
         assertEq(rateLimits.getCurrentRateLimit(depositKey),  25_000_000e18);
         assertEq(rateLimits.getCurrentRateLimit(withdrawKey), 10_000_000e18 - aTokenBalance);
 
-        assertEq(ausds.balanceOf(address(almProxy)), 0);
+        assertEq(AUSDS.balanceOf(address(almProxy)), 0);
         assertEq(usds.balanceOf(address(almProxy)),  aTokenBalance);
-        assertEq(usds.balanceOf(address(ausds)),     startingAUSDSBalance + 1_000_000e18 - aTokenBalance);
+        assertEq(usds.balanceOf(ATOKEN_USDS),        startingAUSDSBalance + 1_000_000e18 - aTokenBalance);
 
         // Interest accrued was withdrawn, reducing cash balance
-        assertLt(usds.balanceOf(address(ausds)), startingAUSDSBalance);
+        assertLt(usds.balanceOf(ATOKEN_USDS), startingAUSDSBalance);
     }
 
-    function test_withdrawAave_usds_unlimitedRateLimit() public {
-        bytes32 depositKey = RateLimitHelpers.makeAddressKey(
-            mainnetController.LIMIT_AAVE_DEPOSIT(),
-            ATOKEN_USDS
-        );
-        bytes32 withdrawKey = RateLimitHelpers.makeAddressKey(
-            mainnetController.LIMIT_AAVE_WITHDRAW(),
-            ATOKEN_USDS
-        );
+    function test_withdrawAave_usds_unlimitedRateLimit() external {
+        bytes32 depositKey  = makeAddressKey(mainnetController.LIMIT_AAVE_DEPOSIT(),   ATOKEN_USDS);
+        bytes32 withdrawKey = makeAddressKey( mainnetController.LIMIT_AAVE_WITHDRAW(), ATOKEN_USDS);
 
         vm.prank(Ethereum.SPARK_PROXY);
         rateLimits.setUnlimitedRateLimitData(withdrawKey);
@@ -377,7 +383,7 @@ contract AaveV3MainMarketWithdrawSuccessTests is AaveV3MainMarketBaseTest {
 
         skip(1 hours);
 
-        uint256 aTokenBalance = ausds.balanceOf(address(almProxy));
+        uint256 aTokenBalance = AUSDS.balanceOf(address(almProxy));
 
         assertEq(aTokenBalance, 1_000_008.690632523560813345e18);
 
@@ -388,9 +394,9 @@ contract AaveV3MainMarketWithdrawSuccessTests is AaveV3MainMarketBaseTest {
         assertEq(rateLimits.getCurrentRateLimit(depositKey),  startingDepositRateLimit);
         assertEq(rateLimits.getCurrentRateLimit(withdrawKey), type(uint256).max);
 
-        assertEq(ausds.balanceOf(address(almProxy)), aTokenBalance);
+        assertEq(AUSDS.balanceOf(address(almProxy)), aTokenBalance);
         assertEq(usds.balanceOf(address(almProxy)),  0);
-        assertEq(usds.balanceOf(address(ausds)),     startingAUSDSBalance + 1_000_000e18);
+        assertEq(usds.balanceOf(ATOKEN_USDS),        startingAUSDSBalance + 1_000_000e18);
 
         // Full withdraw
         vm.prank(relayer);
@@ -399,20 +405,14 @@ contract AaveV3MainMarketWithdrawSuccessTests is AaveV3MainMarketBaseTest {
         assertEq(rateLimits.getCurrentRateLimit(depositKey),  25_000_000e18);
         assertEq(rateLimits.getCurrentRateLimit(withdrawKey), type(uint256).max);  // No change
 
-        assertEq(ausds.balanceOf(address(almProxy)), 0);
+        assertEq(AUSDS.balanceOf(address(almProxy)), 0);
         assertEq(usds.balanceOf(address(almProxy)),  aTokenBalance);
-        assertEq(usds.balanceOf(address(ausds)),     startingAUSDSBalance + 1_000_000e18 - aTokenBalance);
+        assertEq(usds.balanceOf(ATOKEN_USDS),        startingAUSDSBalance + 1_000_000e18 - aTokenBalance);
     }
 
-    function test_withdrawAave_usdc() public {
-        bytes32 depositKey = RateLimitHelpers.makeAddressKey(
-            mainnetController.LIMIT_AAVE_DEPOSIT(),
-            ATOKEN_USDC
-        );
-        bytes32 withdrawKey = RateLimitHelpers.makeAddressKey(
-            mainnetController.LIMIT_AAVE_WITHDRAW(),
-            ATOKEN_USDC
-        );
+    function test_withdrawAave_usdc() external {
+        bytes32 depositKey  = makeAddressKey(mainnetController.LIMIT_AAVE_DEPOSIT(),  ATOKEN_USDC);
+        bytes32 withdrawKey = makeAddressKey(mainnetController.LIMIT_AAVE_WITHDRAW(), ATOKEN_USDC);
 
         deal(Ethereum.USDC, address(almProxy), 1_000_000e6);
         vm.prank(relayer);
@@ -420,13 +420,13 @@ contract AaveV3MainMarketWithdrawSuccessTests is AaveV3MainMarketBaseTest {
 
         skip(1 hours);
 
-        uint256 aTokenBalance = ausdc.balanceOf(address(almProxy));
+        uint256 aTokenBalance = AUSDC.balanceOf(address(almProxy));
 
         assertEq(aTokenBalance, 1_000_013.630187e6);
 
-        assertEq(ausdc.balanceOf(address(almProxy)), aTokenBalance);
+        assertEq(AUSDC.balanceOf(address(almProxy)), aTokenBalance);
         assertEq(usdc.balanceOf(address(almProxy)),  0);
-        assertEq(usdc.balanceOf(address(ausdc)),     startingAUSDCBalance + 1_000_000e6);
+        assertEq(usdc.balanceOf(ATOKEN_USDC),        startingAUSDCBalance + 1_000_000e6);
 
         uint256 startingDepositRateLimit = rateLimits.getCurrentRateLimit(depositKey);
 
@@ -439,9 +439,9 @@ contract AaveV3MainMarketWithdrawSuccessTests is AaveV3MainMarketBaseTest {
         vm.prank(relayer);
         assertEq(mainnetController.withdrawAave(ATOKEN_USDC, 400_000e6), 400_000e6);
 
-        assertEq(ausdc.balanceOf(address(almProxy)), aTokenBalance - 400_000e6);
+        assertEq(AUSDC.balanceOf(address(almProxy)), aTokenBalance - 400_000e6);
         assertEq(usdc.balanceOf(address(almProxy)),  400_000e6);
-        assertEq(usdc.balanceOf(address(ausdc)),     startingAUSDCBalance + 600_000e6);  // 1m - 400k
+        assertEq(usdc.balanceOf(ATOKEN_USDC),        startingAUSDCBalance + 600_000e6);  // 1m - 400k
 
         assertEq(rateLimits.getCurrentRateLimit(depositKey),  startingDepositRateLimit + 400_000e6);
         assertEq(rateLimits.getCurrentRateLimit(withdrawKey), 9_600_000e6);
@@ -450,26 +450,20 @@ contract AaveV3MainMarketWithdrawSuccessTests is AaveV3MainMarketBaseTest {
         vm.prank(relayer);
         assertEq(mainnetController.withdrawAave(ATOKEN_USDC, type(uint256).max), aTokenBalance - 400_000e6);
 
-        assertEq(ausdc.balanceOf(address(almProxy)), 0);
+        assertEq(AUSDC.balanceOf(address(almProxy)), 0);
         assertEq(usdc.balanceOf(address(almProxy)),  aTokenBalance);
-        assertEq(usdc.balanceOf(address(ausdc)),     startingAUSDCBalance + 1_000_000e6 - aTokenBalance);
+        assertEq(usdc.balanceOf(ATOKEN_USDC),        startingAUSDCBalance + 1_000_000e6 - aTokenBalance);
 
         assertEq(rateLimits.getCurrentRateLimit(depositKey),  25_000_000e6);
         assertEq(rateLimits.getCurrentRateLimit(withdrawKey), 10_000_000e6 - aTokenBalance);
 
         // Interest accrued was withdrawn, reducing cash balance
-        assertLt(usdc.balanceOf(address(ausdc)), startingAUSDCBalance);
+        assertLt(usdc.balanceOf(ATOKEN_USDC), startingAUSDCBalance);
     }
 
-    function test_withdrawAave_usdc_unlimitedRateLimit() public {
-        bytes32 depositKey = RateLimitHelpers.makeAddressKey(
-            mainnetController.LIMIT_AAVE_DEPOSIT(),
-            ATOKEN_USDC
-        );
-        bytes32 withdrawKey = RateLimitHelpers.makeAddressKey(
-            mainnetController.LIMIT_AAVE_WITHDRAW(),
-            ATOKEN_USDC
-        );
+    function test_withdrawAave_usdc_unlimitedRateLimit() external {
+        bytes32 depositKey  = makeAddressKey(mainnetController.LIMIT_AAVE_DEPOSIT(),  ATOKEN_USDC);
+        bytes32 withdrawKey = makeAddressKey(mainnetController.LIMIT_AAVE_WITHDRAW(), ATOKEN_USDC);
 
         vm.prank(Ethereum.SPARK_PROXY);
         rateLimits.setUnlimitedRateLimitData(withdrawKey);
@@ -480,7 +474,7 @@ contract AaveV3MainMarketWithdrawSuccessTests is AaveV3MainMarketBaseTest {
 
         skip(1 hours);
 
-        uint256 aTokenBalance = ausdc.balanceOf(address(almProxy));
+        uint256 aTokenBalance = AUSDC.balanceOf(address(almProxy));
 
         assertEq(aTokenBalance, 1_000_013.630187e6);
 
@@ -491,9 +485,9 @@ contract AaveV3MainMarketWithdrawSuccessTests is AaveV3MainMarketBaseTest {
         assertEq(rateLimits.getCurrentRateLimit(depositKey),  startingDepositRateLimit);
         assertEq(rateLimits.getCurrentRateLimit(withdrawKey), type(uint256).max);
 
-        assertEq(ausdc.balanceOf(address(almProxy)), aTokenBalance);
+        assertEq(AUSDC.balanceOf(address(almProxy)), aTokenBalance);
         assertEq(usdc.balanceOf(address(almProxy)),  0);
-        assertEq(usdc.balanceOf(address(ausdc)),     startingAUSDCBalance + 1_000_000e6);
+        assertEq(usdc.balanceOf(ATOKEN_USDC),        startingAUSDCBalance + 1_000_000e6);
 
         // Full withdraw
         vm.prank(relayer);
@@ -502,17 +496,19 @@ contract AaveV3MainMarketWithdrawSuccessTests is AaveV3MainMarketBaseTest {
         assertEq(rateLimits.getCurrentRateLimit(depositKey),  25_000_000e6);
         assertEq(rateLimits.getCurrentRateLimit(withdrawKey), type(uint256).max);  // No change
 
-        assertEq(ausdc.balanceOf(address(almProxy)), 0);
+        assertEq(AUSDC.balanceOf(address(almProxy)), 0);
         assertEq(usdc.balanceOf(address(almProxy)),  aTokenBalance);
-        assertEq(usdc.balanceOf(address(ausdc)),     startingAUSDCBalance + 1_000_000e6 - aTokenBalance);
+        assertEq(usdc.balanceOf(ATOKEN_USDC),        startingAUSDCBalance + 1_000_000e6 - aTokenBalance);
     }
 
 }
 
-contract AaveV3MainMarketAttackBaseTest is ForkTestBase {
+abstract contract AaveV3_Attack_TestBase is ForkTestBase {
 
-    IAToken apyusd = IAToken(SparkLend.PYUSD_SPTOKEN);
-    IERC20  pyusd  = IERC20(Ethereum.PYUSD);
+    IAavePoolLike internal constant POOL = IAavePoolLike(SparkLend.POOL);
+
+    IERC20Like internal constant PYUSD_SPTOKEN = IERC20Like(SparkLend.PYUSD_SPTOKEN);
+    IERC20Like internal constant PYUSD         = IERC20Like(Ethereum.PYUSD);
 
     function setUp() public override {
         super.setUp();
@@ -520,28 +516,26 @@ contract AaveV3MainMarketAttackBaseTest is ForkTestBase {
         vm.startPrank(Ethereum.SPARK_PROXY);
 
         rateLimits.setRateLimitData(
-            RateLimitHelpers.makeAddressKey(
-                mainnetController.LIMIT_AAVE_DEPOSIT(),
-                SparkLend.PYUSD_SPTOKEN
-            ),
+            makeAddressKey(mainnetController.LIMIT_AAVE_DEPOSIT(), SparkLend.PYUSD_SPTOKEN),
             25_000_000e6,
             uint256(5_000_000e6) / 1 days
         );
 
         rateLimits.setRateLimitData(
-            RateLimitHelpers.makeAddressKey(
-                mainnetController.LIMIT_AAVE_WITHDRAW(),
-                SparkLend.PYUSD_SPTOKEN
-            ),
+            makeAddressKey(mainnetController.LIMIT_AAVE_WITHDRAW(), SparkLend.PYUSD_SPTOKEN),
             10_000_000e6,
             uint256(5_000_000e6) / 1 days
         );
 
         // Empty the PYUSD pool.
-        IAavePool(SparkLend.POOL).withdraw(address(pyusd), apyusd.balanceOf(Ethereum.SPARK_PROXY), Ethereum.SPARK_PROXY);
+        POOL.withdraw(
+            Ethereum.PYUSD,
+            PYUSD_SPTOKEN.balanceOf(Ethereum.SPARK_PROXY),
+            Ethereum.SPARK_PROXY
+        );
 
         // Set premium for flash loans to 0.09%
-        IPoolConfigurator(SparkLend.POOL_CONFIGURATOR).updateFlashloanPremiumTotal(9);
+        IPoolConfiguratorLike(SparkLend.POOL_CONFIGURATOR).updateFlashloanPremiumTotal(9);
 
         vm.stopPrank();
     }
@@ -552,79 +546,83 @@ contract AaveV3MainMarketAttackBaseTest is ForkTestBase {
 
 }
 
-contract AaveV3MainMarketLiquidityIndexInflationAttackTest is AaveV3MainMarketAttackBaseTest {
+contract MainnetController_AaveV3_LiquidityIndexInflationAttack_Test is AaveV3_Attack_TestBase {
 
-    function test_depositAave_liquidityIndexInflationAttackFailure() public {
+    function test_depositAave_liquidityIndexInflationAttackFailure() external {
         vm.prank(Ethereum.SPARK_PROXY);
         mainnetController.setMaxSlippage(SparkLend.PYUSD_SPTOKEN, 1e18 - 1e4);  // Rounding slippage
 
         _doInflationAttack();
 
         // Verify that deposit would fail due to slippage
-        deal(address(pyusd), address(almProxy), 100_000e6);
+        deal(Ethereum.PYUSD, address(almProxy), 100_000e6);
 
+        vm.expectRevert("AaveLib/slippage-too-high");
         vm.prank(relayer);
-        vm.expectRevert("MC/slippage-too-high");
         mainnetController.depositAave(SparkLend.PYUSD_SPTOKEN, 100_000e6);
     }
 
-    function test_depositAave_liquidityIndexInflationAttackSuccess() public {
+    function test_depositAave_liquidityIndexInflationAttackSuccess() external {
         vm.prank(Ethereum.SPARK_PROXY);
         mainnetController.setMaxSlippage(SparkLend.PYUSD_SPTOKEN, 1);
 
         _doInflationAttack();
 
         // Deposit would succeed without slippage
-        deal(address(pyusd), address(almProxy), 100_000e6);
+        deal(Ethereum.PYUSD, address(almProxy), 100_000e6);
 
-        assertEq(pyusd.balanceOf(address(almProxy)),  100_000e6);
-        assertEq(apyusd.balanceOf(address(almProxy)), 0);
+        assertEq(PYUSD.balanceOf(address(almProxy)),         100_000e6);
+        assertEq(PYUSD_SPTOKEN.balanceOf(address(almProxy)), 0);
 
         vm.prank(relayer);
         mainnetController.depositAave(SparkLend.PYUSD_SPTOKEN, 100_000e6);
 
         // Amount of aPYUSD received is less than the deposited amount due to slippage
-        assertEq(pyusd.balanceOf(address(almProxy)),  0);
-        assertEq(apyusd.balanceOf(address(almProxy)), 99_000.000011e6);
+        assertEq(PYUSD.balanceOf(address(almProxy)),  0);
+        assertEq(PYUSD_SPTOKEN.balanceOf(address(almProxy)), 99_000.000011e6);
 
         // Attacker withdraws their share
-        IAavePool(SparkLend.POOL).withdraw(address(pyusd), apyusd.balanceOf(address(this)), address(this));
+        POOL.withdraw(
+            Ethereum.PYUSD,
+            PYUSD_SPTOKEN.balanceOf(address(this)),
+            address(this)
+        );
 
         // User withdraws getting less than what they deposited
 
-        assertEq(pyusd.balanceOf(address(almProxy)),  0);
-        assertEq(apyusd.balanceOf(address(almProxy)), 99_000.000011e6);
+        assertEq(PYUSD.balanceOf(address(almProxy)),         0);
+        assertEq(PYUSD_SPTOKEN.balanceOf(address(almProxy)), 99_000.000011e6);
 
         vm.prank(relayer);
         mainnetController.withdrawAave(SparkLend.PYUSD_SPTOKEN, 99_000.000011e6);
 
-        assertEq(pyusd.balanceOf(address(almProxy)),  99_000.000011e6);
-        assertEq(apyusd.balanceOf(address(almProxy)), 0);
+        assertEq(PYUSD.balanceOf(address(almProxy)),         99_000.000011e6);
+        assertEq(PYUSD_SPTOKEN.balanceOf(address(almProxy)), 0);
     }
 
     function _doInflationAttack() internal {
         // Step 1: Initial setup - Start with empty pool
         // The pool should have minimal liquidity from fork state
-        assertEq(apyusd.totalSupply(),             0);
-        assertEq(pyusd.balanceOf(address(apyusd)), 0);
+        assertEq(PYUSD_SPTOKEN.totalSupply(),              0);
+        assertEq(PYUSD.balanceOf(SparkLend.PYUSD_SPTOKEN), 0);
 
         // Get initial liquidity index (should be 1 RAY = 1e27)
-        DataTypes.ReserveDataLegacy memory reserveData = IAavePool(SparkLend.POOL).getReserveData(address(pyusd));
+        DataTypes.ReserveDataLegacy memory reserveData = POOL.getReserveData(Ethereum.PYUSD);
         uint256 initialLiquidityIndex = uint256(reserveData.liquidityIndex);
         assertEq(initialLiquidityIndex, 1e27);
 
         // Step 2: Attacker deposits funds into empty pool
         uint256 flashLoanAmount = 10_000_000e6;
-        deal(address(pyusd), address(this), flashLoanAmount);
-        pyusd.approve(SparkLend.POOL, flashLoanAmount);
+        deal(Ethereum.PYUSD, address(this), flashLoanAmount);
+        PYUSD.approve(SparkLend.POOL, flashLoanAmount);
 
         // Deposit to get aTokens and establish exchange rate
-        IAavePool(SparkLend.POOL).supply(address(pyusd), flashLoanAmount, address(this), 0);
+        POOL.supply(Ethereum.PYUSD, flashLoanAmount, address(this), 0);
 
         // Step 3: Attacker takes second flash loan for entire deposited amount
         // This will empty the aToken balance but keep totalSupply and liquidityIndex unchanged
         address[] memory assets = new address[](1);
-        assets[0] = address(pyusd);
+        assets[0] = Ethereum.PYUSD;
 
         uint256[] memory amounts = new uint256[](1);
         amounts[0] = flashLoanAmount;
@@ -633,7 +631,7 @@ contract AaveV3MainMarketLiquidityIndexInflationAttackTest is AaveV3MainMarketAt
         interestRateModes[0] = 0;
 
         // Flash loan callback will handle the attack
-        IAavePool(SparkLend.POOL).flashLoan(
+        POOL.flashLoan(
             address(this),
             assets,
             amounts,
@@ -645,7 +643,7 @@ contract AaveV3MainMarketLiquidityIndexInflationAttackTest is AaveV3MainMarketAt
 
         // Step 4: Verify the attack results
         // Check that liquidity index has been inflated
-        DataTypes.ReserveDataLegacy memory finalReserveData = IAavePool(SparkLend.POOL).getReserveData(address(pyusd));
+        DataTypes.ReserveDataLegacy memory finalReserveData = POOL.getReserveData(Ethereum.PYUSD);
         uint256 finalLiquidityIndex = uint256(finalReserveData.liquidityIndex);
 
         // The liquidity index should be much higher than 1 RAY due to the attack
@@ -658,7 +656,7 @@ contract AaveV3MainMarketLiquidityIndexInflationAttackTest is AaveV3MainMarketAt
         uint256[] calldata amounts,
         uint256[] calldata,
         address,
-        bytes calldata
+        bytes     calldata
     ) external returns (bool) {
         require(msg.sender == SparkLend.POOL, "Only pool can call this");
 
@@ -666,19 +664,19 @@ contract AaveV3MainMarketLiquidityIndexInflationAttackTest is AaveV3MainMarketAt
 
         // Step 4: Transfer underlying tokens directly to aToken balance
         // This bypasses the deposit function, so no new aTokens are minted
-        pyusd.transfer(address(apyusd), flashLoanAmount);
+        PYUSD.transfer(SparkLend.PYUSD_SPTOKEN, flashLoanAmount);
 
         // Step 5: Withdraw all but 1 aToken
         // This makes totalSupply = 1 while liquidityIndex remains unchanged
-        uint256 aTokenBalance  = apyusd.balanceOf(address(this));
+        uint256 aTokenBalance  = PYUSD_SPTOKEN.balanceOf(address(this));
         uint256 withdrawAmount = aTokenBalance - 1; // Leave 1 aToken
 
         if (withdrawAmount > 0) {
-            IAavePool(SparkLend.POOL).withdraw(address(pyusd), withdrawAmount, address(this));
+            POOL.withdraw(Ethereum.PYUSD, withdrawAmount, address(this));
         }
 
         // Verify we have exactly 1 aToken left
-        assertEq(apyusd.balanceOf(address(this)), 1);
+        assertEq(PYUSD_SPTOKEN.balanceOf(address(this)), 1);
 
         // Step 6: Repay the flash loan with premium
         // Since totalSupply = 1, all the premium goes to the single share
@@ -687,8 +685,8 @@ contract AaveV3MainMarketLiquidityIndexInflationAttackTest is AaveV3MainMarketAt
         uint256 totalRepayAmount = flashLoanAmount + premium;
 
         // We need to have enough PYUSD to repay
-        deal(address(pyusd), address(this), totalRepayAmount);
-        pyusd.approve(SparkLend.POOL, totalRepayAmount);
+        deal(Ethereum.PYUSD, address(this), totalRepayAmount);
+        PYUSD.approve(SparkLend.POOL, totalRepayAmount);
 
         return true;
     }

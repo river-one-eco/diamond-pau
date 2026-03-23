@@ -1,96 +1,103 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.21;
 
-import { IAToken }            from "aave-v3-origin/src/core/contracts/interfaces/IAToken.sol";
-import { IPool as IAavePool } from "aave-v3-origin/src/core/contracts/interfaces/IPool.sol";
-
-import { OptionsBuilder } from "layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
-
-import { IMetaMorpho, Id, MarketAllocation } from "metamorpho/interfaces/IMetaMorpho.sol";
-
 import { AccessControlEnumerable } from "../lib/openzeppelin-contracts/contracts/access/extensions/AccessControlEnumerable.sol";
 import { ReentrancyGuard }         from "../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
-import { IERC20 }   from "../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
-import { IERC4626 } from "../lib/openzeppelin-contracts/contracts/interfaces/IERC4626.sol";
-
-import { IPSM3 } from "spark-psm/src/interfaces/IPSM3.sol";
-
-import { LayerZeroLib } from "./libraries/LayerZeroLib.sol";
+import { AaveLib }          from "./libraries/AaveLib.sol";
+import { CCTPLib }          from "./libraries/CCTPLib.sol";
+import { CentrifugeLib }    from "./libraries/CentrifugeLib.sol";
+import { CurveLib }         from "./libraries/CurveLib.sol";
+import { ERC4626Lib }       from "./libraries/ERC4626Lib.sol";
+import { ERC7540Lib }       from "./libraries/ERC7540Lib.sol";
+import { LayerZeroLib }     from "./libraries/LayerZeroLib.sol";
+import { PendleLib }        from "./libraries/PendleLib.sol";
+import { MerklLib }         from "./libraries/MerklLib.sol";
+import { PSM3Lib }          from "./libraries/PSM3Lib.sol";
+import { SparkVaultLib }    from "./libraries/SparkVaultLib.sol";
+import { TransferAssetLib } from "./libraries/TransferAssetLib.sol";
+import { UniswapV3Lib }     from "./libraries/UniswapV3Lib.sol";
 
 import { IALMProxy }   from "./interfaces/IALMProxy.sol";
-import { ICCTPLike }   from "./interfaces/CCTPInterfaces.sol";
 import { IRateLimits } from "./interfaces/IRateLimits.sol";
 
-import  "./interfaces/ILayerZero.sol";
-
-import { RateLimitHelpers } from "./RateLimitHelpers.sol";
-
-interface IATokenWithPool is IAToken {
-    function POOL() external view returns(address);
-}
-
-interface ISparkVaultLike {
-    function take(uint256 assetAmount) external;
-}
-
 contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
-
-    using OptionsBuilder for bytes;
 
     /**********************************************************************************************/
     /*** Events                                                                                 ***/
     /**********************************************************************************************/
 
-    // NOTE: This is used to track individual transfers for offchain processing of CCTP transactions
-    event CCTPTransferInitiated(
-        uint64  indexed nonce,
-        uint32  indexed destinationDomain,
-        bytes32 indexed mintRecipient,
-        uint256 usdcAmount
-    );
+    event CCTPMaxFeeCapSet(uint256 maxFeeCap);
 
-    event LayerZeroRecipientSet(uint32 indexed destinationEndpointId, bytes32 layerZeroRecipient);
-    event MaxExchangeRateSet(address indexed token, uint256 maxExchangeRate);
     event MaxSlippageSet(address indexed pool, uint256 maxSlippage);
-    event MintRecipientSet(uint32 indexed destinationDomain, bytes32 mintRecipient);
+
     event RelayerRemoved(address indexed relayer);
+
+    event PendleRouterSet(address indexed pendleRouter);
+
+    event MerklDistributorSet(address indexed merklDistributor);
+
+    event UniswapV3SwapRouterSet(address indexed swapRouter);
+
+    event UniswapV3PositionManagerSet(address indexed manager);
 
     /**********************************************************************************************/
     /*** State variables                                                                        ***/
     /**********************************************************************************************/
 
-    uint256 public constant EXCHANGE_RATE_PRECISION = 1e36;
-
     bytes32 public constant FREEZER = keccak256("FREEZER");
     bytes32 public constant RELAYER = keccak256("RELAYER");
 
-    bytes32 public constant LIMIT_4626_DEPOSIT       = keccak256("LIMIT_4626_DEPOSIT");
-    bytes32 public constant LIMIT_4626_WITHDRAW      = keccak256("LIMIT_4626_WITHDRAW");
-    bytes32 public constant LIMIT_AAVE_DEPOSIT       = keccak256("LIMIT_AAVE_DEPOSIT");
-    bytes32 public constant LIMIT_AAVE_WITHDRAW      = keccak256("LIMIT_AAVE_WITHDRAW");
-    bytes32 public constant LIMIT_ASSET_TRANSFER     = keccak256("LIMIT_ASSET_TRANSFER");
-    bytes32 public constant LIMIT_LAYERZERO_TRANSFER = LayerZeroLib.LIMIT_LAYERZERO_TRANSFER;
-    bytes32 public constant LIMIT_PSM_DEPOSIT        = keccak256("LIMIT_PSM_DEPOSIT");
-    bytes32 public constant LIMIT_PSM_WITHDRAW       = keccak256("LIMIT_PSM_WITHDRAW");
-    bytes32 public constant LIMIT_SPARK_VAULT_TAKE   = keccak256("LIMIT_SPARK_VAULT_TAKE");
-    bytes32 public constant LIMIT_USDC_TO_CCTP       = keccak256("LIMIT_USDC_TO_CCTP");
-    bytes32 public constant LIMIT_USDC_TO_DOMAIN     = keccak256("LIMIT_USDC_TO_DOMAIN");
+    bytes32 public constant LIMIT_4626_DEPOSIT        = ERC4626Lib.LIMIT_DEPOSIT;
+    bytes32 public constant LIMIT_4626_WITHDRAW       = ERC4626Lib.LIMIT_WITHDRAW;
+    bytes32 public constant LIMIT_7540_DEPOSIT        = ERC7540Lib.LIMIT_DEPOSIT;
+    bytes32 public constant LIMIT_7540_REDEEM         = ERC7540Lib.LIMIT_REDEEM;
+    bytes32 public constant LIMIT_AAVE_DEPOSIT        = AaveLib.LIMIT_DEPOSIT;
+    bytes32 public constant LIMIT_AAVE_WITHDRAW       = AaveLib.LIMIT_WITHDRAW;
+    bytes32 public constant LIMIT_ASSET_TRANSFER      = TransferAssetLib.LIMIT_TRANSFER;
+    bytes32 public constant LIMIT_CENTRIFUGE_TRANSFER = CentrifugeLib.LIMIT_TRANSFER;
+    bytes32 public constant LIMIT_CURVE_DEPOSIT       = CurveLib.LIMIT_DEPOSIT;
+    bytes32 public constant LIMIT_CURVE_SWAP          = CurveLib.LIMIT_SWAP;
+    bytes32 public constant LIMIT_CURVE_WITHDRAW      = CurveLib.LIMIT_WITHDRAW;
+    bytes32 public constant LIMIT_LAYERZERO_TRANSFER  = LayerZeroLib.LIMIT_TRANSFER;
+    bytes32 public constant LIMIT_PSM_DEPOSIT         = PSM3Lib.LIMIT_DEPOSIT;
+    bytes32 public constant LIMIT_PSM_WITHDRAW        = PSM3Lib.LIMIT_WITHDRAW;
+    bytes32 public constant LIMIT_SPARK_VAULT_TAKE    = SparkVaultLib.LIMIT_TAKE;
+    bytes32 public constant LIMIT_USDC_TO_CCTP        = CCTPLib.LIMIT_TO_CCTP;
+    bytes32 public constant LIMIT_USDC_TO_DOMAIN      = CCTPLib.LIMIT_TO_DOMAIN;
+    bytes32 public constant LIMIT_PENDLE_PT_REDEEM    = PendleLib.LIMIT_REDEEM;
+    bytes32 public constant LIMIT_UNISWAP_V3_DEPOSIT  = UniswapV3Lib.LIMIT_DEPOSIT;
+    bytes32 public constant LIMIT_UNISWAP_V3_SWAP     = UniswapV3Lib.LIMIT_SWAP;
+    bytes32 public constant LIMIT_UNISWAP_V3_WITHDRAW = UniswapV3Lib.LIMIT_WITHDRAW;
 
     IALMProxy   public immutable proxy;
-    ICCTPLike   public immutable cctp;
-    IPSM3       public immutable psm;
+    address     public immutable cctp;
+    address     public immutable psm;
     IRateLimits public immutable rateLimits;
 
-    IERC20 public immutable usdc;
+    address public uniswapV3Router;
+    address public uniswapV3PositionManager;
+
+    address public immutable usdc;
+
+    address public merklDistributor;
+
+    address public pendleRouter;
+
+    // NOTE : Nominal maxFee cap for all cctp supported domains
+    uint256 public cctpMaxFeeCap;
 
     mapping(address pool => uint256 maxSlippage) public maxSlippages;  // 1e18 precision
 
     mapping(uint32 destinationDomain     => bytes32 mintRecipient)      public mintRecipients;
     mapping(uint32 destinationEndpointId => bytes32 layerZeroRecipient) public layerZeroRecipients;
+    mapping(uint16 destinationCentrifugeId => bytes32 recipient)        public centrifugeRecipients;
 
     // ERC4626 exchange rate thresholds (1e36 precision)
     mapping(address token => uint256 maxExchangeRate) public maxExchangeRates;
+
+    // Uniswap V3 pool params
+    mapping(address pool => UniswapV3Lib.PoolParams params) public uniswapV3PoolParams;
 
     /**********************************************************************************************/
     /*** Initialization                                                                         ***/
@@ -108,31 +115,9 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
 
         proxy      = IALMProxy(proxy_);
         rateLimits = IRateLimits(rateLimits_);
-        psm        = IPSM3(psm_);
-        usdc       = IERC20(usdc_);
-        cctp       = ICCTPLike(cctp_);
-    }
-
-    /**********************************************************************************************/
-    /*** Modifiers                                                                              ***/
-    /**********************************************************************************************/
-
-    modifier rateLimited(bytes32 key, uint256 amount) {
-        rateLimits.triggerRateLimitDecrease(key, amount);
-        _;
-    }
-
-    modifier rateLimitedAddress(bytes32 key, address asset, uint256 amount) {
-        rateLimits.triggerRateLimitDecrease(RateLimitHelpers.makeAddressKey(key, asset), amount);
-        _;
-    }
-
-    modifier rateLimitExists(bytes32 key) {
-        require(
-            rateLimits.getRateLimitData(key).maxAmount > 0,
-            "FC/invalid-action"
-        );
-        _;
+        psm        = psm_;
+        usdc       = usdc_;
+        cctp       = cctp_;
     }
 
     /**********************************************************************************************/
@@ -140,7 +125,9 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
     /**********************************************************************************************/
 
     function setMaxSlippage(address pool, uint256 maxSlippage)
-        external nonReentrant onlyRole(DEFAULT_ADMIN_ROLE)
+        external
+        nonReentrant
+        onlyRole(DEFAULT_ADMIN_ROLE)
     {
         require(pool != address(0), "FC/pool-zero-address");
 
@@ -148,29 +135,110 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
         emit MaxSlippageSet(pool, maxSlippage);
     }
 
-    function setMintRecipient(uint32 destinationDomain, bytes32 mintRecipient)
-        external nonReentrant onlyRole(DEFAULT_ADMIN_ROLE)
+    function setCCTPMaxFeeCap(uint256 maxFeeCap)
+        external
+        nonReentrant
+        onlyRole(DEFAULT_ADMIN_ROLE)
     {
-        mintRecipients[destinationDomain] = mintRecipient;
-        emit MintRecipientSet(destinationDomain, mintRecipient);
+        emit CCTPMaxFeeCapSet(cctpMaxFeeCap = maxFeeCap);
     }
 
-    function setLayerZeroRecipient(uint32 destinationEndpointId, bytes32 layerZeroRecipient)
-        external nonReentrant onlyRole(DEFAULT_ADMIN_ROLE)
+    function setMintRecipient(uint32 destinationDomain, bytes32 recipient)
+        external
+        nonReentrant
+        onlyRole(DEFAULT_ADMIN_ROLE)
     {
-        layerZeroRecipients[destinationEndpointId] = layerZeroRecipient;
-        emit LayerZeroRecipientSet(destinationEndpointId, layerZeroRecipient);
+        CCTPLib.setMintRecipient(mintRecipients, recipient, destinationDomain);
+    }
+
+    function setLayerZeroRecipient(uint32 destinationEndpointId, bytes32 recipient)
+        external
+        nonReentrant
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        LayerZeroLib.setRecipient(layerZeroRecipients, destinationEndpointId, recipient);
     }
 
     function setMaxExchangeRate(address token, uint256 shares, uint256 maxExpectedAssets)
-        external nonReentrant onlyRole(DEFAULT_ADMIN_ROLE)
+        external
+        nonReentrant
+        onlyRole(DEFAULT_ADMIN_ROLE)
     {
-        require(token != address(0), "FC/token-zero-address");
+        ERC4626Lib.setMaxExchangeRate(maxExchangeRates, token, shares, maxExpectedAssets);
+    }
 
-        emit MaxExchangeRateSet(
-            token,
-            maxExchangeRates[token] = _getExchangeRate(shares, maxExpectedAssets)
-        );
+    function setPendleRouter(address pendleRouter_)
+        external
+        nonReentrant
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        pendleRouter = pendleRouter_;
+        emit PendleRouterSet(pendleRouter_);
+    }
+
+    function setMerklDistributor(address merklDistributor_)
+        external
+        nonReentrant
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        merklDistributor = merklDistributor_;
+        emit MerklDistributorSet(merklDistributor_);
+    }
+
+    function setCentrifugeRecipient(uint16 centrifugeId, bytes32 recipient)
+        external
+        nonReentrant
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        CentrifugeLib.setCentrifugeRecipient(centrifugeRecipients, centrifugeId, recipient);
+    }
+
+    function setUniswapV3PositionManager(address manager)
+        external
+        nonReentrant
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        emit UniswapV3PositionManagerSet(uniswapV3PositionManager = manager);
+    }
+
+    function setUniswapV3SwapRouter(address swapRouter)
+        external
+        nonReentrant
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        emit UniswapV3SwapRouterSet(uniswapV3Router = swapRouter);
+    }
+
+    function setUniswapV3PoolMaxTickDelta(address pool, uint24 maxTickDelta)
+        external
+        nonReentrant
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        UniswapV3Lib.setPoolMaxTickDelta(pool, maxTickDelta, uniswapV3PoolParams);
+    }
+
+    function setUniswapV3AddLiquidityLowerTickBound(address pool, int24 lowerTickBound)
+        external
+        nonReentrant
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        UniswapV3Lib.setAddLiquidityLowerTickBound(pool, lowerTickBound, uniswapV3PoolParams);
+    }
+
+    function setUniswapV3AddLiquidityUpperTickBound(address pool, int24 upperTickBound)
+        external
+        nonReentrant
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        UniswapV3Lib.setAddLiquidityUpperTickBound(pool, upperTickBound, uniswapV3PoolParams);
+    }
+
+    function setUniswapV3TWAPSecondsAgo(address pool, uint32 twapSecondsAgo)
+        external
+        nonReentrant
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        UniswapV3Lib.setTWAPSecondsAgo(pool, twapSecondsAgo, uniswapV3PoolParams);
     }
 
     /**********************************************************************************************/
@@ -190,20 +258,90 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
         external
         nonReentrant
         onlyRole(RELAYER)
-        rateLimited(
-            RateLimitHelpers.makeAddressAddressKey(LIMIT_ASSET_TRANSFER, asset, destination),
-            amount
-        )
     {
-        bytes memory returnData = proxy.doCall(
-            asset,
-            abi.encodeCall(IERC20(asset).transfer, (destination, amount))
-        );
+        TransferAssetLib.transfer(address(proxy), address(rateLimits), asset, destination, amount);
+    }
 
-        require(
-            returnData.length == 0 || (returnData.length == 32 && abi.decode(returnData, (bool))),
-            "FC/transfer-failed"
-        );
+    /**********************************************************************************************/
+    /*** Relayer UniswapV3 functions                                                            ***/
+    /**********************************************************************************************/
+
+    function swapUniswapV3(
+        address pool,
+        address tokenIn,
+        uint256 amountIn,
+        uint256 minAmountOut,
+        uint24  maxTickDelta
+    )
+        external
+        nonReentrant
+        onlyRole(RELAYER)
+        returns (uint256 amountOut)
+    {
+        return UniswapV3Lib.swap({
+            proxy        : address(proxy),
+            rateLimits   : address(rateLimits),
+            pool         : pool,
+            router       : uniswapV3Router,
+            tokenIn      : tokenIn,
+            amountIn     : amountIn,
+            minAmountOut : minAmountOut,
+            tickDelta    : maxTickDelta,
+            poolParams   : uniswapV3PoolParams
+        });
+    }
+
+    function addLiquidityUniswapV3(
+        address                            pool,
+        uint256                            tokenId,
+        UniswapV3Lib.Ticks        calldata ticks,
+        UniswapV3Lib.TokenAmounts calldata target,
+        UniswapV3Lib.TokenAmounts calldata min,
+        uint256                            deadline
+    )
+        external
+        nonReentrant
+        onlyRole(RELAYER)
+        returns (uint256 tokenId_, uint128 liquidity_, UniswapV3Lib.TokenAmounts memory amounts_)
+    {
+        ( tokenId_, liquidity_, amounts_ ) = UniswapV3Lib.addLiquidity({
+            proxy           : address(proxy),
+            rateLimits      : address(rateLimits),
+            pool            : pool,
+            positionManager : uniswapV3PositionManager,
+            tokenId         : tokenId,
+            ticks           : ticks,
+            target          : target,
+            min             : min,
+            deadline        : deadline,
+            maxSlippages    : maxSlippages,
+            poolParams      : uniswapV3PoolParams
+        });
+    }
+
+    function removeLiquidityUniswapV3(
+        address                            pool,
+        uint256                            tokenId,
+        uint128                            liquidity,
+        UniswapV3Lib.TokenAmounts calldata min,
+        uint256                            deadline
+    )
+        external
+        nonReentrant
+        onlyRole(RELAYER)
+        returns (UniswapV3Lib.TokenAmounts memory amounts_)
+    {
+        return UniswapV3Lib.removeLiquidity({
+            proxy           : address(proxy),
+            rateLimits      : address(rateLimits),
+            pool            : pool,
+            positionManager : uniswapV3PositionManager,
+            tokenId         : tokenId,
+            liquidity       : liquidity,
+            min             : min,
+            deadline        : deadline,
+            maxSlippages    : maxSlippages
+        });
     }
 
     /**********************************************************************************************/
@@ -214,46 +352,18 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
         external
         nonReentrant
         onlyRole(RELAYER)
-        rateLimitedAddress(LIMIT_PSM_DEPOSIT, asset, amount)
         returns (uint256 shares)
     {
-        // Approve `asset` to PSM from the proxy (assumes the proxy has enough `asset`).
-        _approve(asset, address(psm), amount);
-
-        // Deposit `amount` of `asset` in the PSM, decode the result to get `shares`.
-        shares = abi.decode(
-            proxy.doCall(
-                address(psm),
-                abi.encodeCall(
-                    psm.deposit,
-                    (asset, address(proxy), amount)
-                )
-            ),
-            (uint256)
-        );
+        return PSM3Lib.deposit(address(proxy), address(rateLimits), psm, asset, amount);
     }
 
-    // NOTE: !!! Rate limited at end of function !!!
     function withdrawPSM(address asset, uint256 maxAmount)
-        external nonReentrant onlyRole(RELAYER) returns (uint256 assetsWithdrawn)
+        external
+        nonReentrant
+        onlyRole(RELAYER)
+        returns (uint256 assetsWithdrawn)
     {
-        // Withdraw up to `maxAmount` of `asset` in the PSM, decode the result
-        // to get `assetsWithdrawn` (assumes the proxy has enough PSM shares).
-        assetsWithdrawn = abi.decode(
-            proxy.doCall(
-                address(psm),
-                abi.encodeCall(
-                    psm.withdraw,
-                    (asset, address(proxy), maxAmount)
-                )
-            ),
-            (uint256)
-        );
-
-        rateLimits.triggerRateLimitDecrease(
-            RateLimitHelpers.makeAddressKey(LIMIT_PSM_WITHDRAW, asset),
-            assetsWithdrawn
-        );
+        return PSM3Lib.withdraw(address(proxy), address(rateLimits), psm, asset, maxAmount);
     }
 
     /**********************************************************************************************/
@@ -264,31 +374,36 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
         external
         nonReentrant
         onlyRole(RELAYER)
-        rateLimited(LIMIT_USDC_TO_CCTP, usdcAmount)
-        rateLimited(
-            RateLimitHelpers.makeUint32Key(LIMIT_USDC_TO_DOMAIN, destinationDomain),
-            usdcAmount
-        )
     {
-        bytes32 mintRecipient = mintRecipients[destinationDomain];
+        CCTPLib.transfer({
+            proxy             : address(proxy),
+            rateLimits        : address(rateLimits),
+            cctp              : cctp,
+            usdc              : usdc,
+            destinationDomain : destinationDomain,
+            usdcAmount        : usdcAmount,
+            maxFee            : CCTPLib.MAX_FEE,
+            cctpMaxFeeCap     : cctpMaxFeeCap,
+            mintRecipients    : mintRecipients
+        });
+    }
 
-        require(mintRecipient != 0, "FC/domain-not-configured");
-
-        // Approve USDC to CCTP from the proxy (assumes the proxy has enough USDC).
-        _approve(address(usdc), address(cctp), usdcAmount);
-
-        // If amount is larger than limit it must be split into multiple calls.
-        uint256 burnLimit = cctp.localMinter().burnLimitsPerMessage(address(usdc));
-
-        while (usdcAmount > burnLimit) {
-            _initiateCCTPTransfer(burnLimit, destinationDomain, mintRecipient);
-            usdcAmount -= burnLimit;
-        }
-
-        // Send remaining amount (if any)
-        if (usdcAmount > 0) {
-            _initiateCCTPTransfer(usdcAmount, destinationDomain, mintRecipient);
-        }
+    function transferUSDCToCCTP(uint256 usdcAmount, uint256 maxFee, uint32 destinationDomain)
+        external
+        nonReentrant
+        onlyRole(RELAYER)
+    {
+        CCTPLib.transfer({
+            proxy             : address(proxy),
+            rateLimits        : address(rateLimits),
+            cctp              : cctp,
+            usdc              : usdc,
+            destinationDomain : destinationDomain,
+            usdcAmount        : usdcAmount,
+            maxFee            : maxFee,
+            cctpMaxFeeCap     : cctpMaxFeeCap,
+            mintRecipients    : mintRecipients
+        });
     }
 
     // NOTE: !!! This function was deployed without integration testing !!!
@@ -304,13 +419,13 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
         nonReentrant
         onlyRole(RELAYER)
     {
-        LayerZeroLib.transferTokenLayerZero({
-            proxy                 : proxy,
-            rateLimits            : rateLimits,
+        LayerZeroLib.transfer({
+            proxy                 : address(proxy),
+            rateLimits            : address(rateLimits),
             oftAddress            : oftAddress,
             amount                : amount,
             destinationEndpointId : destinationEndpointId,
-            layerZeroRecipient    : layerZeroRecipients[destinationEndpointId]
+            layerZeroRecipients   : layerZeroRecipients
         });
     }
 
@@ -322,142 +437,131 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
         external
         nonReentrant
         onlyRole(RELAYER)
-        rateLimitedAddress(LIMIT_4626_DEPOSIT, token, amount)
         returns (uint256 shares)
     {
-        // Approve asset to token from the proxy (assumes the proxy has enough of the asset).
-        _approve(IERC4626(token).asset(), token, amount);
-
-        // Deposit asset into the token, proxy receives token shares, decode the resulting shares.
-        shares = abi.decode(
-            proxy.doCall(
-                token,
-                abi.encodeCall(IERC4626(token).deposit, (amount, address(proxy)))
-            ),
-            (uint256)
-        );
-
-        require(shares >= minSharesOut, "FC/min-shares-out-not-met");
-
-        require(
-            _getExchangeRate(shares, amount) <= maxExchangeRates[token],
-            "FC/exchange-rate-too-high"
-        );
+        return ERC4626Lib.deposit({
+            proxy            : address(proxy),
+            rateLimits       : address(rateLimits),
+            token            : token,
+            amount           : amount,
+            minSharesOut     : minSharesOut,
+            maxExchangeRates : maxExchangeRates
+        });
     }
 
     function withdrawERC4626(address token, uint256 amount, uint256 maxSharesIn)
         external
         nonReentrant
         onlyRole(RELAYER)
-        rateLimitedAddress(LIMIT_4626_WITHDRAW, token, amount)
         returns (uint256 shares)
     {
-        // Withdraw asset from a token, decode resulting shares.
-        // Assumes proxy has adequate token shares.
-        shares = abi.decode(
-            proxy.doCall(
-                token,
-                abi.encodeCall(IERC4626(token).withdraw, (amount, address(proxy), address(proxy)))
-            ),
-            (uint256)
-        );
-
-        require(shares <= maxSharesIn, "FC/shares-burned-too-high");
-
-        rateLimits.triggerRateLimitIncrease(
-            RateLimitHelpers.makeAddressKey(LIMIT_4626_DEPOSIT, token),
-            amount
-        );
+        return ERC4626Lib.withdraw(address(proxy), address(rateLimits), token, amount, maxSharesIn);
     }
 
-    // NOTE: !!! Rate limited at end of function !!!
     function redeemERC4626(address token, uint256 shares, uint256 minAssetsOut)
-        external nonReentrant onlyRole(RELAYER) returns (uint256 assets)
+        external
+        nonReentrant
+        onlyRole(RELAYER)
+        returns (uint256 assets)
     {
-        // Redeem shares for assets from the token, decode the resulting assets.
-        // Assumes proxy has adequate token shares.
-        assets = abi.decode(
-            proxy.doCall(
-                token,
-                abi.encodeCall(IERC4626(token).redeem, (shares, address(proxy), address(proxy)))
-            ),
-            (uint256)
-        );
+        return ERC4626Lib.redeem(address(proxy), address(rateLimits), token, shares, minAssetsOut);
+    }
 
-        require(assets >= minAssetsOut, "FC/min-assets-out-not-met");
-
-        rateLimits.triggerRateLimitDecrease(
-            RateLimitHelpers.makeAddressKey(LIMIT_4626_WITHDRAW, token),
-            assets
-        );
-        rateLimits.triggerRateLimitIncrease(
-            RateLimitHelpers.makeAddressKey(LIMIT_4626_DEPOSIT, token),
-            assets
-        );
+    function EXCHANGE_RATE_PRECISION() external pure returns (uint256) {
+        return ERC4626Lib.EXCHANGE_RATE_PRECISION;
     }
 
     /**********************************************************************************************/
     /*** Relayer Aave functions                                                                 ***/
     /**********************************************************************************************/
 
-    function depositAave(address aToken, uint256 amount)
+    function depositAave(address aToken, uint256 amount) external nonReentrant onlyRole(RELAYER) {
+        AaveLib.deposit(address(proxy), address(rateLimits), aToken, amount, maxSlippages);
+    }
+
+    function withdrawAave(address aToken, uint256 amount)
         external
         nonReentrant
         onlyRole(RELAYER)
-        rateLimitedAddress(LIMIT_AAVE_DEPOSIT, aToken, amount)
+        returns (uint256 amountWithdrawn)
     {
-        require(maxSlippages[aToken] != 0, "FC/max-slippage-not-set");
-
-        IERC20    underlying = IERC20(IATokenWithPool(aToken).UNDERLYING_ASSET_ADDRESS());
-        IAavePool pool       = IAavePool(IATokenWithPool(aToken).POOL());
-
-        uint256 aTokenBalance = IERC20(aToken).balanceOf(address(proxy));
-
-        // Approve underlying to Aave pool from the proxy (assumes the proxy has enough underlying).
-        _approve(address(underlying), address(pool), amount);
-
-        // Deposit underlying into Aave pool, proxy receives aTokens.
-        proxy.doCall(
-            address(pool),
-            abi.encodeCall(pool.supply, (address(underlying), amount, address(proxy), 0))
-        );
-
-        uint256 newATokens = IERC20(aToken).balanceOf(address(proxy)) - aTokenBalance;
-
-        require(
-            newATokens >= amount * maxSlippages[aToken] / 1e18,
-            "FC/slippage-too-high"
-        );
+        return AaveLib.withdraw(address(proxy), address(rateLimits), aToken, amount);
     }
 
-    // NOTE: !!! Rate limited at end of function !!!
-    function withdrawAave(address aToken, uint256 amount)
-        external nonReentrant onlyRole(RELAYER) returns (uint256 amountWithdrawn)
+    /**********************************************************************************************/
+    /*** Relayer Curve StableSwap functions                                                     ***/
+    /**********************************************************************************************/
+
+    function swapCurve(
+        address pool,
+        uint256 inputIndex,
+        uint256 outputIndex,
+        uint256 amountIn,
+        uint256 minAmountOut
+    )
+        external
+        nonReentrant
+        onlyRole(RELAYER)
+        returns (uint256 amountOut)
     {
-        IAavePool pool = IAavePool(IATokenWithPool(aToken).POOL());
+        return CurveLib.swap({
+            proxy        : address(proxy),
+            rateLimits   : address(rateLimits),
+            pool         : pool,
+            inputIndex   : inputIndex,
+            outputIndex  : outputIndex,
+            amountIn     : amountIn,
+            minAmountOut : minAmountOut,
+            maxSlippages : maxSlippages
+        });
+    }
 
-        // Withdraw underlying from Aave pool, decode resulting amount withdrawn.
-        // Assumes proxy has adequate aTokens.
-        amountWithdrawn = abi.decode(
-            proxy.doCall(
-                address(pool),
-                abi.encodeCall(
-                    pool.withdraw,
-                    (IATokenWithPool(aToken).UNDERLYING_ASSET_ADDRESS(), amount, address(proxy))
-                )
-            ),
-            (uint256)
-        );
+    function addLiquidityCurve(address pool, uint256[] memory depositAmounts, uint256 minLpAmount)
+        external
+        nonReentrant
+        onlyRole(RELAYER)
+        returns (uint256 shares)
+    {
+        return CurveLib.addLiquidity({
+            proxy          : address(proxy),
+            rateLimits     : address(rateLimits),
+            pool           : pool,
+            minLpAmount    : minLpAmount,
+            depositAmounts : depositAmounts,
+            maxSlippages   : maxSlippages
+        });
+    }
 
-        rateLimits.triggerRateLimitDecrease(
-            RateLimitHelpers.makeAddressKey(LIMIT_AAVE_WITHDRAW, aToken),
-            amountWithdrawn
-        );
+    function removeLiquidityCurve(
+        address   pool,
+        uint256   lpBurnAmount,
+        uint256[] memory minWithdrawAmounts
+    )
+        external
+        nonReentrant
+        onlyRole(RELAYER)
+        returns (uint256[] memory withdrawnTokens)
+    {
+        return CurveLib.removeLiquidity({
+            proxy              : address(proxy),
+            rateLimits         : address(rateLimits),
+            pool               : pool,
+            lpBurnAmount       : lpBurnAmount,
+            minWithdrawAmounts : minWithdrawAmounts,
+            maxSlippages       : maxSlippages
+        });
+    }
 
-        rateLimits.triggerRateLimitIncrease(
-            RateLimitHelpers.makeAddressKey(LIMIT_AAVE_DEPOSIT, aToken),
-            amountWithdrawn
-        );
+    /**********************************************************************************************/
+    /*** Relayer Merkl functions                                                                ***/
+    /**********************************************************************************************/
+
+    function toggleOperatorMerkl(address operator) external nonReentrant onlyRole(RELAYER) {
+        MerklLib.toggleOperator({
+            proxy       : address(proxy),
+            distributor : merklDistributor,
+            operator    : operator
+        });
     }
 
     /**********************************************************************************************/
@@ -468,94 +572,109 @@ contract ForeignController is ReentrancyGuard, AccessControlEnumerable {
         external
         nonReentrant
         onlyRole(RELAYER)
-        rateLimitedAddress(LIMIT_SPARK_VAULT_TAKE, sparkVault, assetAmount)
     {
-        // Take assets from the vault
-        proxy.doCall(
-            sparkVault,
-            abi.encodeCall(ISparkVaultLike.take, (assetAmount))
-        );
+        SparkVaultLib.take(address(proxy), address(rateLimits), sparkVault, assetAmount);
     }
 
     /**********************************************************************************************/
-    /*** Internal helper functions                                                              ***/
+    /*** Relayer Pendle functions                                                               ***/
     /**********************************************************************************************/
 
-    // NOTE: This logic was inspired by OpenZeppelin's forceApprove in SafeERC20 library
-    function _approve(address token, address spender, uint256 amount) internal {
-        bytes memory approveData = abi.encodeCall(IERC20.approve, (spender, amount));
-
-        // Call doCall on proxy to approve the token
-        ( bool success, bytes memory data )
-            = address(proxy).call(abi.encodeCall(IALMProxy.doCall, (token, approveData)));
-
-        bytes memory approveCallReturnData;
-
-        if (success) {
-            // Data is the ABI-encoding of the approve call bytes return data, need to
-            // decode it first
-            approveCallReturnData = abi.decode(data, (bytes));
-            // Approve was successful if 1) no return value or 2) true return value
-            if (
-                approveCallReturnData.length == 0 ||
-                (approveCallReturnData.length == 32 && abi.decode(approveCallReturnData, (bool)))
-            ) {
-                return;
-            }
-        }
-
-        // If call was unsuccessful, set to zero and try again
-        proxy.doCall(token, abi.encodeCall(IERC20.approve, (spender, 0)));
-
-        approveCallReturnData = proxy.doCall(token, approveData);
-
-        // Revert if approve returns false
-        require(
-            approveCallReturnData.length == 0 ||
-            (approveCallReturnData.length == 32 && abi.decode(approveCallReturnData, (bool))
-        ),
-            "FC/approve-failed"
-        );
-    }
-
-    function _initiateCCTPTransfer(
-        uint256 usdcAmount,
-        uint32  destinationDomain,
-        bytes32 mintRecipient
-    )
-        internal
+    function redeemPendlePT(address pendleMarket, uint256 pyAmountIn, uint256 minAmountOut)
+        external
+        nonReentrant
+        onlyRole(RELAYER)
     {
-        uint64 nonce = abi.decode(
-            proxy.doCall(
-                address(cctp),
-                abi.encodeCall(
-                    cctp.depositForBurn,
-                    (
-                        usdcAmount,
-                        destinationDomain,
-                        mintRecipient,
-                        address(usdc)
-                    )
-                )
-            ),
-            (uint64)
-        );
-
-        emit CCTPTransferInitiated(nonce, destinationDomain, mintRecipient, usdcAmount);
+        PendleLib.redeem({
+            proxy        : address(proxy),
+            rateLimits   : address(rateLimits),
+            market       : pendleMarket,
+            router       : pendleRouter,
+            pyAmountIn   : pyAmountIn,
+            minAmountOut : minAmountOut
+        });
     }
 
     /**********************************************************************************************/
-    /*** Exchange rate helper functions                                                         ***/
+    /*** Relayer ERC7540 functions                                                              ***/
     /**********************************************************************************************/
 
-    function _getExchangeRate(uint256 shares, uint256 assets) internal pure returns (uint256) {
-        // Return 0 for zero assets first, to handle the valid case of 0 shares and 0 assets.
-        if (assets == 0) return 0;
+    function requestDepositERC7540(address token, uint256 amount)
+        external
+        nonReentrant
+        onlyRole(RELAYER)
+    {
+        ERC7540Lib.requestDeposit(address(proxy), address(rateLimits), token, amount);
+    }
 
-        // Zero shares with non-zero assets is invalid (infinite exchange rate).
-        if (shares == 0) revert("FC/zero-shares");
+    function claimDepositERC7540(address token) external nonReentrant onlyRole(RELAYER) {
+        ERC7540Lib.claimDeposit(address(proxy), address(rateLimits), token);
+    }
 
-        return (EXCHANGE_RATE_PRECISION * assets) / shares;
+    function requestRedeemERC7540(address token, uint256 shares)
+        external
+        nonReentrant
+        onlyRole(RELAYER)
+    {
+        ERC7540Lib.requestRedeem(address(proxy), address(rateLimits), token, shares);
+    }
+
+    function claimRedeemERC7540(address token) external nonReentrant onlyRole(RELAYER) {
+        ERC7540Lib.claimRedeem(address(proxy), address(rateLimits), token);
+    }
+
+    /**********************************************************************************************/
+    /*** Relayer Centrifuge functions                                                           ***/
+    /**********************************************************************************************/
+
+    // NOTE: These cancellation methods are compatible with ERC-7887
+
+    function cancelCentrifugeDepositRequest(address token)
+        external
+        nonReentrant
+        onlyRole(RELAYER)
+    {
+        CentrifugeLib.cancelDepositRequest(address(proxy), address(rateLimits), token);
+    }
+
+    function claimCentrifugeCancelDepositRequest(address token)
+        external
+        nonReentrant
+        onlyRole(RELAYER)
+    {
+        CentrifugeLib.claimCancelDepositRequest(address(proxy), address(rateLimits), token);
+    }
+
+    function cancelCentrifugeRedeemRequest(address token)
+        external
+        nonReentrant
+        onlyRole(RELAYER)
+    {
+        CentrifugeLib.cancelRedeemRequest(address(proxy), address(rateLimits), token);
+    }
+
+    function claimCentrifugeCancelRedeemRequest(address token)
+        external
+        nonReentrant
+        onlyRole(RELAYER)
+    {
+        CentrifugeLib.claimCancelRedeemRequest(address(proxy), address(rateLimits), token);
+    }
+
+    function transferSharesCentrifuge(address token, uint128 amount, uint16 centrifugeId)
+        external
+        payable
+        nonReentrant
+        onlyRole(RELAYER)
+    {
+        CentrifugeLib.transferShares({
+            proxy        : address(proxy),
+            rateLimits   : address(rateLimits),
+            token        : token,
+            centrifugeId : centrifugeId,
+            amount       : amount,
+            recipients   : centrifugeRecipients
+        });
     }
 
 }

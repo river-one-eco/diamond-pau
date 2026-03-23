@@ -1,80 +1,60 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.21;
 
-import "dss-test/DssTest.sol";
+import { AllocatorDeploy } from "../../lib/dss-allocator/deploy/AllocatorDeploy.sol";
 
-import { AllocatorInit, AllocatorIlkConfig } from "dss-allocator/deploy/AllocatorInit.sol";
+import { AllocatorInit, AllocatorIlkConfig } from "../../lib/dss-allocator/deploy/AllocatorInit.sol";
 
 import {
     AllocatorIlkInstance,
     AllocatorSharedInstance
-} from "dss-allocator/deploy/AllocatorInstances.sol";
+} from "../../lib/dss-allocator/deploy/AllocatorInstances.sol";
 
-import { AllocatorDeploy } from "dss-allocator/deploy/AllocatorDeploy.sol";
+import { DssTest }          from "../../lib/dss-test/src/DssTest.sol";
+import { DssInstance, MCD } from "../../lib/dss-test/src/MCD.sol";
 
-import { IERC20 }   from "forge-std/interfaces/IERC20.sol";
-import { IERC4626 } from "forge-std/interfaces/IERC4626.sol";
+import { IERC20 }   from "../../lib/forge-std/src/interfaces/IERC20.sol";
+import { IERC4626 } from "../../lib/forge-std/src/interfaces/IERC4626.sol";
 
-import { ISUsds } from "sdai/src/ISUsds.sol";
+import { Ethereum } from "../../lib/spark-address-registry/src/Ethereum.sol";
 
-import { Ethereum } from "spark-address-registry/Ethereum.sol";
+import { CCTPForwarder } from "../../lib/xchain-helpers/src/forwarders/CCTPForwarder.sol";
+import { DomainHelpers } from "../../lib/xchain-helpers/src/testing/Domain.sol";
 
-import { Bridge }                from "xchain-helpers/testing/Bridge.sol";
-import { CCTPForwarder }         from "xchain-helpers/forwarders/CCTPForwarder.sol";
-import { Domain, DomainHelpers } from "xchain-helpers/testing/Domain.sol";
-
-import { MainnetControllerDeploy } from "../../deploy/ControllerDeploy.sol";
-import { ControllerInstance }      from "../../deploy/ControllerInstance.sol";
-
+import { MainnetControllerDeploy }       from "../../deploy/ControllerDeploy.sol";
+import { ControllerInstance }            from "../../deploy/ControllerInstance.sol";
 import { MainnetControllerInit as Init } from "../../deploy/MainnetControllerInit.sol";
 
 import { ALMProxy }          from "../../src/ALMProxy.sol";
-import { RateLimits }        from "../../src/RateLimits.sol";
 import { MainnetController } from "../../src/MainnetController.sol";
-
 import { RateLimitHelpers }  from "../../src/RateLimitHelpers.sol";
+import { RateLimits }        from "../../src/RateLimits.sol";
 
 interface IChainlogLike {
+
     function getAddress(bytes32) external view returns (address);
+
 }
 
 interface IBufferLike {
+
     function approve(address, address, uint256) external;
+
 }
 
 interface ISUSDELike is IERC4626 {
+
     function cooldownAssets(uint256 usdeAmount) external returns (uint256);
+
     function cooldownShares(uint256 susdeAmount) external returns (uint256);
+
     function unstake(address receiver) external;
+
     function silo() external view returns(address);
+
 }
 
-interface IPSMLike {
-    function bud(address) external view returns (uint256);
-    function pocket() external view returns (address);
-    function kiss(address) external;
-    function rush() external view returns (uint256);
-}
-
-interface ISSTokenLike is IERC20 {
-    function calculateSuperstateTokenOut(uint256 amountIn, address stablecoin)
-        external view returns (
-            uint256 superstateTokenOutAmount,
-            uint256 stablcoinInAmountAfterFee,
-            uint256 feeOnStablecoinInAmount
-        );
-    function mint(address to, uint256 amount) external;
-    function burn(address src, uint256 amount) external;
-    function owner() external view returns (address);
-    function supportedStablecoins(address stablecoin) external view returns (address sweepDestination, uint256 fee);
-}
-
-interface IVaultLike {
-    function rely(address) external;
-    function wards(address) external returns (uint256);
-}
-
-contract ForkTestBase is DssTest {
+abstract contract ForkTestBase is DssTest {
 
     using DomainHelpers for *;
 
@@ -114,21 +94,17 @@ contract ForkTestBase is DssTest {
     address constant DAI_USDS       = Ethereum.DAI_USDS;
     address constant ETHENA_MINTER  = Ethereum.ETHENA_MINTER;
     address constant PAUSE_PROXY    = Ethereum.PAUSE_PROXY;
-    address constant PSM            = Ethereum.PSM;
     address constant SPARK_PROXY    = Ethereum.SPARK_PROXY;
 
-    IERC20 constant dai   = IERC20(Ethereum.DAI);
-    IERC20 constant usdc  = IERC20(Ethereum.USDC);
-    IERC20 constant usde  = IERC20(Ethereum.USDE);
-    IERC20 constant usds  = IERC20(Ethereum.USDS);
-    IERC20 constant usdt  = IERC20(Ethereum.USDT);
-    ISUsds constant susds = ISUsds(Ethereum.SUSDS);
+    IERC20 constant dai  = IERC20(Ethereum.DAI);
+    IERC20 constant usdc = IERC20(Ethereum.USDC);
+    IERC20 constant usde = IERC20(Ethereum.USDE);
+    IERC20 constant usds = IERC20(Ethereum.USDS);
+    IERC20 constant usdt = IERC20(Ethereum.USDT);
 
-    ISSTokenLike constant uscc  = ISSTokenLike(Ethereum.USCC);
-    ISSTokenLike constant ustb  = ISSTokenLike(Ethereum.USTB);
-    ISUSDELike   constant susde = ISUSDELike(Ethereum.SUSDE);
+    IERC4626 constant susds = IERC4626(Ethereum.SUSDS);
 
-    IPSMLike constant psm = IPSMLike(PSM);
+    ISUSDELike constant susde = ISUSDELike(Ethereum.SUSDE);
 
     address POCKET;
     address USDS_JOIN;
@@ -145,14 +121,6 @@ contract ForkTestBase is DssTest {
 
     address buffer;
     address vault;
-
-    /**********************************************************************************************/
-    /*** Bridging setup                                                                         ***/
-    /**********************************************************************************************/
-
-    Bridge bridge;
-    Domain source;
-    Domain destination;
 
     /**********************************************************************************************/
     /*** Cached mainnet state variables                                                         ***/
@@ -174,19 +142,19 @@ contract ForkTestBase is DssTest {
 
         /*** Step 1: Set up environment, cast addresses ***/
 
-        source = getChain("mainnet").createSelectFork(_getBlock());
+        getChain("mainnet").createSelectFork(_getBlock());
 
         dss = MCD.loadFromChainlog(LOG);
 
         USDS_JOIN = IChainlogLike(LOG).getAddress("USDS_JOIN");
         POCKET    = IChainlogLike(LOG).getAddress("MCD_LITE_PSM_USDC_A_POCKET");
 
-        DAI_BAL_PSM       = dai.balanceOf(PSM);
+        DAI_BAL_PSM       = dai.balanceOf(Ethereum.PSM);
         DAI_SUPPLY        = dai.totalSupply();
         USDC_BAL_PSM      = usdc.balanceOf(POCKET);
         USDC_SUPPLY       = usdc.totalSupply();
         USDS_SUPPLY       = usds.totalSupply();
-        USDS_BAL_SUSDS    = usds.balanceOf(address(susds));
+        USDS_BAL_SUSDS    = usds.balanceOf(Ethereum.SUSDS);
         VAT_DAI_USDS_JOIN = dss.vat.dai(USDS_JOIN);
 
         /*** Step 2: Deploy and configure allocation system ***/
@@ -227,7 +195,7 @@ contract ForkTestBase is DssTest {
             vault   : ilkInst.vault,
             psm     : Ethereum.PSM,
             daiUsds : Ethereum.DAI_USDS,
-            cctp    : Ethereum.CCTP_TOKEN_MESSENGER
+            cctp    : CCTP_MESSENGER
         });
 
         almProxy          = ALMProxy(payable(controllerInst.almProxy));
@@ -256,7 +224,7 @@ contract ForkTestBase is DssTest {
                 vault      : address(vault),
                 psm        : Ethereum.PSM,
                 daiUsds    : Ethereum.DAI_USDS,
-                cctp       : Ethereum.CCTP_TOKEN_MESSENGER
+                cctp       : CCTP_MESSENGER
             });
 
         Init.LayerZeroRecipient[] memory layerZeroRecipients = new Init.LayerZeroRecipient[](0);
@@ -313,7 +281,7 @@ contract ForkTestBase is DssTest {
         /*** Step 6: Label addresses ***/
 
         vm.label(buffer,         "buffer");
-        vm.label(address(susds), "susds");
+        vm.label(Ethereum.SUSDS, "susds");
         vm.label(address(usdc),  "usdc");
         vm.label(address(usds),  "usds");
         vm.label(vault,          "vault");

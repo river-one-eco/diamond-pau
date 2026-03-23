@@ -3,9 +3,27 @@ pragma solidity ^0.8.21;
 
 import { ReentrancyGuard } from "../../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
-import "./ForkTestBase.t.sol";
+import { Ethereum } from "../../lib/spark-address-registry/src/Ethereum.sol";
 
-contract MainnetControllerMintUSDSFailureTests is ForkTestBase {
+import { RateLimits } from "../../src/RateLimits.sol";
+
+import { ForkTestBase } from "./ForkTestBase.t.sol";
+
+interface IERC20Like {
+
+    function balanceOf(address account) external view returns (uint256);
+
+    function totalSupply() external view returns (uint256);
+
+}
+
+abstract contract Vault_TestBase is ForkTestBase {
+
+    IERC20Like internal constant USDS = IERC20Like(Ethereum.USDS);
+
+}
+
+contract MainnetController_Vault_MintUSDS_Tests is Vault_TestBase {
 
     function test_mintUSDS_reentrancy() external {
         _setControllerEntered();
@@ -27,27 +45,23 @@ contract MainnetControllerMintUSDSFailureTests is ForkTestBase {
         rateLimits.setRateLimitData(mainnetController.LIMIT_USDS_MINT(), 0, 0);
         vm.stopPrank();
 
-        vm.prank(relayer);
         vm.expectRevert("RateLimits/zero-maxAmount");
+        vm.prank(relayer);
         mainnetController.mintUSDS(1e18);
     }
 
     function test_mintUSDS_rateLimitBoundary() external {
-        vm.prank(relayer);
         vm.expectRevert("RateLimits/rate-limit-exceeded");
+        vm.prank(relayer);
         mainnetController.mintUSDS(5_000_000e18 + 1);
 
         vm.prank(relayer);
         mainnetController.mintUSDS(5_000_000e18);
     }
 
-}
-
-contract MainnetControllerMintUSDSSuccessTests is ForkTestBase {
-
     function test_mintUSDS() external {
         ( uint256 ink, uint256 art ) = dss.vat.urns(ilk, vault);
-        ( uint256 Art,,,, )          = dss.vat.ilks(ilk);
+        ( uint256 Art, , , , )       = dss.vat.ilks(ilk);
 
         assertEq(dss.vat.dai(USDS_JOIN), VAT_DAI_USDS_JOIN);
 
@@ -55,8 +69,8 @@ contract MainnetControllerMintUSDSSuccessTests is ForkTestBase {
         assertEq(ink, INK);
         assertEq(art, 0);
 
-        assertEq(usds.balanceOf(address(almProxy)), 0);
-        assertEq(usds.totalSupply(),                USDS_SUPPLY);
+        assertEq(USDS.balanceOf(address(almProxy)), 0);
+        assertEq(USDS.totalSupply(),                USDS_SUPPLY);
 
         vm.record();
 
@@ -65,8 +79,8 @@ contract MainnetControllerMintUSDSSuccessTests is ForkTestBase {
 
         _assertReentrancyGuardWrittenToTwice();
 
-        ( ink, art ) = dss.vat.urns(ilk, vault);
-        ( Art,,,, )  = dss.vat.ilks(ilk);
+        ( ink, art )   = dss.vat.urns(ilk, vault);
+        ( Art, , , , ) = dss.vat.ilks(ilk);
 
         assertEq(dss.vat.dai(USDS_JOIN), VAT_DAI_USDS_JOIN + 1e45);
 
@@ -74,8 +88,8 @@ contract MainnetControllerMintUSDSSuccessTests is ForkTestBase {
         assertEq(ink, INK);
         assertEq(art, 1e18);
 
-        assertEq(usds.balanceOf(address(almProxy)), 1e18);
-        assertEq(usds.totalSupply(),                USDS_SUPPLY + 1e18);
+        assertEq(USDS.balanceOf(address(almProxy)), 1e18);
+        assertEq(USDS.totalSupply(),                USDS_SUPPLY + 1e18);
     }
 
     function test_mintUSDS_rateLimited() external {
@@ -84,22 +98,22 @@ contract MainnetControllerMintUSDSSuccessTests is ForkTestBase {
         vm.startPrank(relayer);
 
         assertEq(rateLimits.getCurrentRateLimit(key), 5_000_000e18);
-        assertEq(usds.balanceOf(address(almProxy)),   0);
+        assertEq(USDS.balanceOf(address(almProxy)),   0);
 
         mainnetController.mintUSDS(1_000_000e18);
 
         assertEq(rateLimits.getCurrentRateLimit(key), 4_000_000e18);
-        assertEq(usds.balanceOf(address(almProxy)),   1_000_000e18);
+        assertEq(USDS.balanceOf(address(almProxy)),   1_000_000e18);
 
         skip(1 hours);
 
         assertEq(rateLimits.getCurrentRateLimit(key), 4_249_999.9999999999999984e18);
-        assertEq(usds.balanceOf(address(almProxy)),   1_000_000e18);
+        assertEq(USDS.balanceOf(address(almProxy)),   1_000_000e18);
 
         mainnetController.mintUSDS(4_249_999.9999999999999984e18);
 
         assertEq(rateLimits.getCurrentRateLimit(key), 0);
-        assertEq(usds.balanceOf(address(almProxy)),   5_249_999.9999999999999984e18);
+        assertEq(USDS.balanceOf(address(almProxy)),   5_249_999.9999999999999984e18);
 
         vm.expectRevert("RateLimits/rate-limit-exceeded");
         mainnetController.mintUSDS(1);
@@ -109,7 +123,7 @@ contract MainnetControllerMintUSDSSuccessTests is ForkTestBase {
 
 }
 
-contract MainnetControllerBurnUSDSFailureTests is ForkTestBase {
+contract MainnetController_Vault_BurnUSDS_Tests is Vault_TestBase {
 
     function test_burnUSDS_reentrancy() external {
         _setControllerEntered();
@@ -131,14 +145,10 @@ contract MainnetControllerBurnUSDSFailureTests is ForkTestBase {
         rateLimits.setRateLimitData(mainnetController.LIMIT_USDS_MINT(), 0, 0);
         vm.stopPrank();
 
-        vm.prank(relayer);
         vm.expectRevert("RateLimits/zero-maxAmount");
+        vm.prank(relayer);
         mainnetController.burnUSDS(1e18);
     }
-
-}
-
-contract MainnetControllerBurnUSDSSuccessTests is ForkTestBase {
 
     function test_burnUSDS() external {
         // Setup
@@ -146,7 +156,7 @@ contract MainnetControllerBurnUSDSSuccessTests is ForkTestBase {
         mainnetController.mintUSDS(1e18);
 
         ( uint256 ink, uint256 art ) = dss.vat.urns(ilk, vault);
-        ( uint256 Art,,,, )          = dss.vat.ilks(ilk);
+        ( uint256 Art, , , , )       = dss.vat.ilks(ilk);
 
         assertEq(dss.vat.dai(USDS_JOIN), VAT_DAI_USDS_JOIN + 1e45);
 
@@ -154,8 +164,8 @@ contract MainnetControllerBurnUSDSSuccessTests is ForkTestBase {
         assertEq(ink, INK);
         assertEq(art, 1e18);
 
-        assertEq(usds.balanceOf(address(almProxy)), 1e18);
-        assertEq(usds.totalSupply(),                USDS_SUPPLY + 1e18);
+        assertEq(USDS.balanceOf(address(almProxy)), 1e18);
+        assertEq(USDS.totalSupply(),                USDS_SUPPLY + 1e18);
 
         vm.record();
 
@@ -164,8 +174,8 @@ contract MainnetControllerBurnUSDSSuccessTests is ForkTestBase {
 
         _assertReentrancyGuardWrittenToTwice();
 
-        ( ink, art ) = dss.vat.urns(ilk, vault);
-        ( Art,,,, )  = dss.vat.ilks(ilk);
+        ( ink, art )   = dss.vat.urns(ilk, vault);
+        ( Art, , , , ) = dss.vat.ilks(ilk);
 
         assertEq(dss.vat.dai(USDS_JOIN), VAT_DAI_USDS_JOIN);
 
@@ -173,8 +183,8 @@ contract MainnetControllerBurnUSDSSuccessTests is ForkTestBase {
         assertEq(ink, INK);
         assertEq(art, 0);
 
-        assertEq(usds.balanceOf(address(almProxy)), 0);
-        assertEq(usds.totalSupply(),                USDS_SUPPLY);
+        assertEq(USDS.balanceOf(address(almProxy)), 0);
+        assertEq(USDS.totalSupply(),                USDS_SUPPLY);
     }
 
     function test_burnUSDS_rateLimited() external {
@@ -183,27 +193,27 @@ contract MainnetControllerBurnUSDSSuccessTests is ForkTestBase {
         vm.startPrank(relayer);
 
         assertEq(rateLimits.getCurrentRateLimit(key), 5_000_000e18);
-        assertEq(usds.balanceOf(address(almProxy)),   0);
+        assertEq(USDS.balanceOf(address(almProxy)),   0);
 
         mainnetController.mintUSDS(1_000_000e18);
 
         assertEq(rateLimits.getCurrentRateLimit(key), 4_000_000e18);
-        assertEq(usds.balanceOf(address(almProxy)),   1_000_000e18);
+        assertEq(USDS.balanceOf(address(almProxy)),   1_000_000e18);
 
         mainnetController.burnUSDS(500_000e18);
 
         assertEq(rateLimits.getCurrentRateLimit(key), 4_500_000e18);
-        assertEq(usds.balanceOf(address(almProxy)),   500_000e18);
+        assertEq(USDS.balanceOf(address(almProxy)),   500_000e18);
 
         skip(4 hours);
 
         assertEq(rateLimits.getCurrentRateLimit(key), 5_000_000e18);
-        assertEq(usds.balanceOf(address(almProxy)),   500_000e18);
+        assertEq(USDS.balanceOf(address(almProxy)),   500_000e18);
 
         mainnetController.burnUSDS(500_000e18);
 
         assertEq(rateLimits.getCurrentRateLimit(key), 5_000_000e18);
-        assertEq(usds.balanceOf(address(almProxy)),   0);
+        assertEq(USDS.balanceOf(address(almProxy)),   0);
 
         vm.stopPrank();
     }

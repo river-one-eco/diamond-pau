@@ -1,27 +1,56 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.21;
 
-import { IERC20Metadata as IERC20 } from "openzeppelin-contracts/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import { SafeERC20 }                from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
+import {
+    AccessControlEnumerableUpgradeable
+} from "../lib/oz-upgradeable/contracts/access/extensions/AccessControlEnumerableUpgradeable.sol";
 
-import { AccessControlEnumerableUpgradeable }
-    from "openzeppelin-contracts-upgradeable/contracts/access/extensions/AccessControlEnumerableUpgradeable.sol";
+import { UUPSUpgradeable } from "../lib/oz-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
 
-import { UUPSUpgradeable } from "openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
+import { Ethereum } from "../lib/spark-address-registry/src/Ethereum.sol";
 
-import { Ethereum } from "spark-address-registry/Ethereum.sol";
+interface IERC20Like {
 
-import { IEETHLike, ILiquidityPoolLike, IWETHLike, IWEETHLike } from "./libraries/WEETHLib.sol";
+    function transfer(address to, uint256 amount) external returns (bool);
 
-interface IWithdrawRequestNFTLike {
-    function claimWithdraw(uint256 requestId) external;
-    function isFinalized(uint256 requestId) external view returns (bool);
-    function isValid(uint256 requestId) external view returns (bool);
 }
 
-contract WEETHModule is AccessControlEnumerableUpgradeable, UUPSUpgradeable {
+interface IEETHLike {
 
-    using SafeERC20 for IERC20;
+    function liquidityPool() external view returns (address);
+
+}
+
+interface ILiquidityPoolLike {
+
+    function withdrawRequestNFT() external view returns (address);
+
+}
+
+interface IWEETHLike {
+
+    function eETH() external view returns (address);
+
+}
+
+interface IWETHLike {
+
+    function deposit() external payable;
+
+}
+
+interface IWithdrawRequestNFTLike {
+
+    function claimWithdraw(uint256 requestId) external;
+
+    function isFinalized(uint256 requestId) external view returns (bool);
+
+    function isValid(uint256 requestId) external view returns (bool);
+
+}
+
+// NOTE: This contract is is specifically for Mainnet Ethereum.
+contract WEETHModule is AccessControlEnumerableUpgradeable, UUPSUpgradeable {
 
     /**********************************************************************************************/
     /*** UUPS Storage                                                                           ***/
@@ -49,14 +78,14 @@ contract WEETHModule is AccessControlEnumerableUpgradeable, UUPSUpgradeable {
         _disableInitializers();  // Avoid initializing in the context of the implementation
     }
 
-    function initialize(address admin, address almProxy_) external initializer {
+    function initialize(address admin_, address almProxy_) external initializer {
         require(almProxy_ != address(0), "WEETHModule/invalid-alm-proxy");
-        require(admin     != address(0), "WEETHModule/invalid-admin");
+        require(admin_    != address(0), "WEETHModule/invalid-admin");
 
         __AccessControlEnumerable_init();
         __UUPSUpgradeable_init();
 
-        _grantRole(DEFAULT_ADMIN_ROLE, admin);
+        _grantRole(DEFAULT_ADMIN_ROLE, admin_);
 
         _getWEETHModuleStorage().almProxy = almProxy_;
     }
@@ -71,8 +100,8 @@ contract WEETHModule is AccessControlEnumerableUpgradeable, UUPSUpgradeable {
     function claimWithdrawal(uint256 requestId) external returns (uint256 ethReceived) {
         require(msg.sender == almProxy(), "WEETHModule/invalid-sender");
 
-        address eETH               = IWEETHLike(Ethereum.WEETH).eETH();
-        address liquidityPool      = IEETHLike(eETH).liquidityPool();
+        address eeth               = IWEETHLike(Ethereum.WEETH).eETH();
+        address liquidityPool      = IEETHLike(eeth).liquidityPool();
         address withdrawRequestNFT = ILiquidityPoolLike(liquidityPool).withdrawRequestNFT();
 
         require(
@@ -92,11 +121,14 @@ contract WEETHModule is AccessControlEnumerableUpgradeable, UUPSUpgradeable {
         // Wrap ETH to WETH.
         IWETHLike(Ethereum.WETH).deposit{value: ethReceived}();
 
-        IERC20(Ethereum.WETH).safeTransfer(msg.sender, ethReceived);
+        // No need for SafeERC20 as we are transferring WETH with an expected transfer function.
+        IERC20Like(Ethereum.WETH).transfer(msg.sender, ethReceived);
     }
 
     function onERC721Received(address, address, uint256, bytes calldata)
-        external pure returns (bytes4)
+        external
+        pure
+        returns (bytes4)
     {
         return this.onERC721Received.selector;
     }

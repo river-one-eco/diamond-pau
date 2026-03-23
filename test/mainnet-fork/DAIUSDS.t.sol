@@ -1,11 +1,29 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity >=0.8.0;
+pragma solidity ^0.8.21;
 
 import { ReentrancyGuard } from "../../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
-import "./ForkTestBase.t.sol";
+import { Ethereum } from "../../lib/spark-address-registry/src/Ethereum.sol";
 
-contract MainnetControllerSwapUSDSToDAIFailureTests is ForkTestBase {
+import { ForkTestBase } from "./ForkTestBase.t.sol";
+
+interface IERC20Like {
+
+    function allowance(address owner, address spender) external view returns (uint256);
+
+    function balanceOf(address account) external view returns (uint256);
+
+    function totalSupply() external view returns (uint256);
+
+}
+
+abstract contract DaiUsds_TestBase is ForkTestBase {
+
+    IERC20Like internal constant USDS = IERC20Like(Ethereum.USDS);
+
+}
+
+contract MainnetController_DAIUSDS_SwapUSDSToDAI_Tests is DaiUsds_TestBase {
 
     function test_swapUSDSToDAI_reentrancy() external {
         _setControllerEntered();
@@ -22,21 +40,17 @@ contract MainnetControllerSwapUSDSToDAIFailureTests is ForkTestBase {
         mainnetController.swapUSDSToDAI(1_000_000e18);
     }
 
-}
-
-contract MainnetControllerSwapUSDSToDAITests is ForkTestBase {
-
     function test_swapUSDSToDAI() external {
         vm.prank(relayer);
         mainnetController.mintUSDS(1_000_000e18);
 
-        assertEq(usds.balanceOf(address(almProxy)), 1_000_000e18);
-        assertEq(usds.totalSupply(),                USDS_SUPPLY + 1_000_000e18);
+        assertEq(USDS.balanceOf(address(almProxy)), 1_000_000e18);
+        assertEq(USDS.totalSupply(),                USDS_SUPPLY + 1_000_000e18);
 
         assertEq(dai.balanceOf(address(almProxy)), 0);
         assertEq(dai.totalSupply(),                DAI_SUPPLY);
 
-        assertEq(usds.allowance(address(almProxy), DAI_USDS), 0);
+        assertEq(USDS.allowance(address(almProxy), Ethereum.DAI_USDS), 0);
 
         vm.record();
 
@@ -45,18 +59,18 @@ contract MainnetControllerSwapUSDSToDAITests is ForkTestBase {
 
         _assertReentrancyGuardWrittenToTwice();
 
-        assertEq(usds.balanceOf(address(almProxy)), 0);
-        assertEq(usds.totalSupply(),                USDS_SUPPLY);
+        assertEq(USDS.balanceOf(address(almProxy)), 0);
+        assertEq(USDS.totalSupply(),                USDS_SUPPLY);
 
         assertEq(dai.balanceOf(address(almProxy)), 1_000_000e18);
         assertEq(dai.totalSupply(),                DAI_SUPPLY + 1_000_000e18);
 
-        assertEq(usds.allowance(address(almProxy), DAI_USDS), 0);
+        assertEq(USDS.allowance(address(almProxy), Ethereum.DAI_USDS), 0);
     }
 
 }
 
-contract MainnetControllerSwapDAIToUSDSFailureTests is ForkTestBase {
+contract MainnetController_DAIUSDS_SwapDAIToUSDS_Tests is DaiUsds_TestBase {
 
     function test_swapDAIToUSDS_reentrancy() external {
         _setControllerEntered();
@@ -73,20 +87,16 @@ contract MainnetControllerSwapDAIToUSDSFailureTests is ForkTestBase {
         mainnetController.swapDAIToUSDS(1_000_000e18);
     }
 
-}
-
-contract MainnetControllerSwapDAIToUSDSTests is ForkTestBase {
-
     function test_swapDAIToUSDS() external {
         deal(address(dai), address(almProxy), 1_000_000e18);
 
-        assertEq(usds.balanceOf(address(almProxy)), 0);
-        assertEq(usds.totalSupply(),                USDS_SUPPLY);
+        assertEq(USDS.balanceOf(address(almProxy)), 0);
+        assertEq(USDS.totalSupply(),                USDS_SUPPLY);
 
         assertEq(dai.balanceOf(address(almProxy)), 1_000_000e18);
         assertEq(dai.totalSupply(),                DAI_SUPPLY);  // Supply not updated on deal
 
-        assertEq(dai.allowance(address(almProxy), DAI_USDS), 0);
+        assertEq(dai.allowance(address(almProxy), Ethereum.DAI_USDS), 0);
 
         vm.record();
 
@@ -95,13 +105,13 @@ contract MainnetControllerSwapDAIToUSDSTests is ForkTestBase {
 
         _assertReentrancyGuardWrittenToTwice();
 
-        assertEq(usds.balanceOf(address(almProxy)), 1_000_000e18);
-        assertEq(usds.totalSupply(),                USDS_SUPPLY + 1_000_000e18);
+        assertEq(USDS.balanceOf(address(almProxy)), 1_000_000e18);
+        assertEq(USDS.totalSupply(),                USDS_SUPPLY + 1_000_000e18);
 
         assertEq(dai.balanceOf(address(almProxy)), 0);
         assertEq(dai.totalSupply(),                DAI_SUPPLY - 1_000_000e18);
 
-        assertEq(dai.allowance(address(almProxy), DAI_USDS), 0);
+        assertEq(dai.allowance(address(almProxy), Ethereum.DAI_USDS), 0);
     }
 
 }
