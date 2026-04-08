@@ -149,9 +149,6 @@ contract LayerZeroFacet is ILayerZeroFacet, FacetBase {
     /*** External Interactive Relayer Functions                                                 ***/
     /**********************************************************************************************/
 
-    // NOTE: !!! This function was deployed without integration testing !!!
-    //       KEEP RATE LIMIT AT ZERO until LayerZero dependencies are live and
-    //       all functionality has been thoroughly integration tested.
     function transfer(address oftAddress, uint256 amount, uint32 destinationEndpointId)
         external
         payable
@@ -172,9 +169,6 @@ contract LayerZeroFacet is ILayerZeroFacet, FacetBase {
 
         address proxy = $.proxy;
 
-        // NOTE: Full integration testing of this logic is not possible without OFTs with
-        //       approvalRequired == false. Add integration testing for this case before
-        //       using in production.
         if (ILayerZeroLike(oftAddress).approvalRequired()) {
             ApproveLib.approve(
                 ILayerZeroLike(oftAddress).token(),
