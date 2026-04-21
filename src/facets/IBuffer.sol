@@ -1,23 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.34;
 
-import {
-    IAccessControl
-} from "../../lib/openzeppelin-contracts/contracts/access/IAccessControl.sol";
-
-/**
- * @title  IALMProxy
- * @notice Proxy contract that executes calls, value calls, and delegate calls on behalf of the
- *         PAU system. Only accounts with the CONTROLLER role can invoke its functions.
- */
-interface IALMProxy is IAccessControl {
+interface IBuffer {
 
     /**********************************************************************************************/
     /*** Custom Errors                                                                          ***/
     /**********************************************************************************************/
 
-    /// @notice Thrown when the admin is the zero address.
-    error ZeroAdmin();
+    /**
+     * @notice Thrown when the caller is not the admin.
+     * @param  caller The address of the caller.
+     * @param  admin  The address of the admin.
+     */
+    error NotAdmin(address caller, address admin);
 
     /**********************************************************************************************/
     /*** Interactive Functions                                                                  ***/
@@ -60,10 +55,7 @@ interface IALMProxy is IAccessControl {
     /*** Variables                                                                              ***/
     /**********************************************************************************************/
 
-    /**
-     * @notice This function retrieves a constant `bytes32` value that represents the controller.
-     * @return The `bytes32` identifier of the controller.
-     */
-    function CONTROLLER() external view returns (bytes32);
+    /// @notice The admin address.
+    function admin() external view returns (address);
 
 }

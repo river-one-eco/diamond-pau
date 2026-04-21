@@ -1,50 +1,45 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.34;
 
-import { AccessControl } from "../lib/openzeppelin-contracts/contracts/access/AccessControl.sol";
-import { Address }       from "../lib/openzeppelin-contracts/contracts/utils/Address.sol";
+import { Address } from "../../lib/openzeppelin-contracts/contracts/utils/Address.sol";
 
-import { IALMProxyFreezable } from "./interfaces/IALMProxyFreezable.sol";
+import { IBuffer } from "./IBuffer.sol";
 
-contract ALMProxyFreezable is IALMProxyFreezable, AccessControl {
+contract Buffer is IBuffer {
 
     using Address for address;
 
     /**********************************************************************************************/
-    /*** Constants                                                                              ***/
+    /*** Declarations                                                                           ***/
     /**********************************************************************************************/
 
-    bytes32 public constant override FREEZER = keccak256("FREEZER");
-    bytes32 public constant override RELAYER = keccak256("RELAYER");
+    address public admin;
+
+    /**********************************************************************************************/
+    /*** Modifiers                                                                              ***/
+    /**********************************************************************************************/
+
+    modifier onlyAdmin() {
+        require(msg.sender == admin, NotAdmin(msg.sender, admin));
+        _;
+    }
 
     /**********************************************************************************************/
     /*** Constructor                                                                            ***/
     /**********************************************************************************************/
 
-    constructor(address admin) {
-        require(admin != address(0), ZeroAdmin());
-
-        _grantRole(DEFAULT_ADMIN_ROLE, admin);
+    constructor() {
+        admin = msg.sender;
     }
 
     /**********************************************************************************************/
-    /*** External Interactive Freezer Functions                                                 ***/
-    /**********************************************************************************************/
-
-    function removeRelayer(address relayer) external override onlyRole(FREEZER) {
-        require(_revokeRole(RELAYER, relayer), "ALMProxyFreezable/not-live-relayer");
-
-        emit RelayerRemoved(relayer);
-    }
-
-    /**********************************************************************************************/
-    /*** External Interactive Relayer Functions                                                 ***/
+    /*** External Interactive Controller Functions                                              ***/
     /**********************************************************************************************/
 
     function doCall(address target, bytes calldata data)
         external
         override
-        onlyRole(RELAYER)
+        onlyAdmin
         returns (bytes memory result)
     {
         return target.functionCall(data);
@@ -54,10 +49,19 @@ contract ALMProxyFreezable is IALMProxyFreezable, AccessControl {
         external
         payable
         override
-        onlyRole(RELAYER)
+        onlyAdmin
         returns (bytes memory result)
     {
         return target.functionCallWithValue(data, value);
+    }
+
+    function doDelegateCall(address target, bytes calldata data)
+        external
+        override
+        onlyAdmin
+        returns (bytes memory result)
+    {
+        return target.functionDelegateCall(data);
     }
 
     /**********************************************************************************************/

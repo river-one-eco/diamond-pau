@@ -228,7 +228,7 @@ abstract contract IMainnetControllerFull is IController, Controller {
 
     function setOTCMaxSlippage(address exchange, uint256 maxSlippage) external virtual;
 
-    function setOTCBuffer(address exchange, address otcBuffer) external virtual;
+    function setOTCBuffer(address exchange) external virtual returns (address buffer);
 
     function setOTCRechargeRate(address exchange, uint256 rechargeRate18) external virtual;
 

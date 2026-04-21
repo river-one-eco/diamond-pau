@@ -121,9 +121,9 @@ interface IOTCFacet is IFacetBase {
     /**
      * @notice Sets the buffer address for an exchange.
      * @param  exchange Address of the OTC exchange.
-     * @param  buffer   Address of the buffer contract.
+     * @return buffer   Address of the deployed buffer contract.
      */
-    function setBuffer(address exchange, address buffer) external;
+    function setBuffer(address exchange) external returns (address buffer);
 
     /**
      * @notice Sets the whitelist status of an asset for an exchange.

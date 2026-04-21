@@ -7,13 +7,15 @@ import { IEnumerableIntegrations } from "../../../src/interfaces/IEnumerableInte
 import { IFacetBase }              from "../../../src/facets/IFacetBase.sol";
 import { IOTCFacet }               from "../../../src/facets/otc/IOTCFacet.sol";
 
+import { Buffer } from "../../../src/facets/Buffer.sol";
+
 import { OTCFacet } from "../../../src/facets/otc/OTCFacet.sol";
 
 import { Integration_TestBase } from "../TestBase.t.sol";
 
 interface IControllerLike {
 
-    function setBuffer(address exchange, address buffer) external;
+    function setBuffer(address exchange) external returns (address buffer);
 
     function setIsWhitelisted(address exchange, address asset, bool isWhitelisted) external;
 
@@ -109,7 +111,7 @@ contract Controller_OTCFacet_Admin_Tests is OTCFacet_TestBase {
     function test_setBuffer_reentrancy() external {
         _setEntered(address(controller));
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        controller.setBuffer(address(0), address(0));
+        controller.setBuffer(address(0));
     }
 
     function test_setBuffer_notAdmin() external {
@@ -122,7 +124,7 @@ contract Controller_OTCFacet_Admin_Tests is OTCFacet_TestBase {
         );
 
         vm.prank(unauthorized);
-        controller.setBuffer(address(0), address(0));
+        controller.setBuffer(address(0));
 
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -133,46 +135,50 @@ contract Controller_OTCFacet_Admin_Tests is OTCFacet_TestBase {
         );
 
         vm.prank(relayer);
-        controller.setBuffer(address(0), address(0));
+        controller.setBuffer(address(0));
     }
 
     function test_setBuffer_zeroExchange() external {
         vm.expectRevert("OTCFacet/exchange-zero-address");
         vm.prank(admin);
-        controller.setBuffer(address(0), address(0));
+        controller.setBuffer(address(0));
     }
 
-    function test_setBuffer_zeroBuffer() external {
-        vm.expectRevert("OTCFacet/otcBuffer-zero-address");
+    function test_setBuffer_alreadySet() external {
+        address exchange = makeAddr("exchange");
+
         vm.prank(admin);
-        controller.setBuffer(address(1), address(0));
-    }
+        controller.setBuffer(exchange);
 
-    function test_setBuffer_equalsBuffer() external {
-        vm.expectRevert("OTCFacet/exchange-equals-otcBuffer");
+        vm.expectRevert("OTCFacet/buffer-already-set");
         vm.prank(admin);
-        controller.setBuffer(address(1), address(1));
+        controller.setBuffer(exchange);
     }
-
-    // TODO: test_setBuffer_notReady
 
     function test_setBuffer() external {
-        address buffer   = makeAddr("buffer");
         address exchange = makeAddr("exchange");
 
         assertEq(controller.getBuffer(exchange), address(0));
 
+        address expectedBuffer = computeCreate2Address(
+            keccak256(abi.encode(exchange)),
+            keccak256(type(Buffer).creationCode),
+            address(controller)
+        );
+
         vm.expectEmit(address(controller));
-        emit IOTCFacet.OTCBufferSet(exchange, buffer);
+        emit IOTCFacet.OTCBufferSet(exchange, expectedBuffer);
 
         vm.record();
 
         vm.prank(admin);
-        controller.setBuffer(exchange, buffer);
+        address buffer = controller.setBuffer(exchange);
 
         _assertReentrancyGuardWrittenToTwice(address(controller));
 
-        assertEq(controller.getBuffer(exchange), buffer);
+        assertEq(buffer, expectedBuffer);
+
+        assertEq(controller.getBuffer(exchange), expectedBuffer);
     }
 
     /**********************************************************************************************/
@@ -351,11 +357,10 @@ contract Controller_OTCFacet_Admin_Tests is OTCFacet_TestBase {
 
     function test_setIsWhitelisted() external {
         address asset    = makeAddr("asset");
-        address buffer   = makeAddr("buffer");
         address exchange = makeAddr("exchange");
 
         vm.prank(admin);
-        controller.setBuffer(exchange, buffer);
+        controller.setBuffer(exchange);
 
         assertEq(controller.getIsWhitelisted(exchange, asset), false);
 

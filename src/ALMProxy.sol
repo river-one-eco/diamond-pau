@@ -36,7 +36,7 @@ contract ALMProxy is IALMProxy, AccessControl {
         onlyRole(CONTROLLER)
         returns (bytes memory result)
     {
-        result = target.functionCall(data);
+        return target.functionCall(data);
     }
 
     function doCallWithValue(address target, bytes calldata data, uint256 value)
@@ -46,7 +46,7 @@ contract ALMProxy is IALMProxy, AccessControl {
         onlyRole(CONTROLLER)
         returns (bytes memory result)
     {
-        result = target.functionCallWithValue(data, value);
+        return target.functionCallWithValue(data, value);
     }
 
     function doDelegateCall(address target, bytes calldata data)
@@ -55,7 +55,7 @@ contract ALMProxy is IALMProxy, AccessControl {
         onlyRole(CONTROLLER)
         returns (bytes memory result)
     {
-        result = target.functionDelegateCall(data);
+        return target.functionDelegateCall(data);
     }
 
     /**********************************************************************************************/

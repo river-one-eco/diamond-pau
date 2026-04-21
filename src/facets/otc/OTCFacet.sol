@@ -6,6 +6,9 @@ import { makeAddressKey } from "../../libraries/RateLimitHelpers.sol";
 import { IALMProxy }   from "../../interfaces/IALMProxy.sol";
 import { IRateLimits } from "../../interfaces/IRateLimits.sol";
 
+import { IBuffer } from "../IBuffer.sol";
+
+import { Buffer }    from "../Buffer.sol";
 import { FacetBase } from "../FacetBase.sol";
 
 import { IOTCFacet } from "./IOTCFacet.sol";
@@ -70,23 +73,20 @@ contract OTCFacet is IOTCFacet, FacetBase {
         emit OTCMaxSlippageSet(exchange, maxSlippage);
     }
 
-    function setBuffer(address exchange, address buffer)
+    function setBuffer(address exchange)
         external
         override
         nonReentrant
         onlyRole(DEFAULT_ADMIN_ROLE)
+        returns (address buffer)
     {
         require(exchange != address(0), "OTCFacet/exchange-zero-address");
-        require(buffer   != address(0), "OTCFacet/otcBuffer-zero-address");
-        require(exchange != buffer,     "OTCFacet/exchange-equals-otcBuffer");
 
         FacetStorage storage $ = _getFacetStorage();
 
-        // Prevent rotating buffer while a swap is pending and not ready.
-        require(
-            $.states[exchange].sentTimestamp == 0 || isSwapReady(exchange),
-            "OTCFacet/swap-in-progress"
-        );
+        require($.parameters[exchange].buffer == address(0), "OTCFacet/buffer-already-set");
+
+        buffer = address(new Buffer{salt: keccak256(abi.encode(exchange))}());
 
         emit OTCBufferSet(exchange, $.parameters[exchange].buffer = buffer);
     }
@@ -178,12 +178,22 @@ contract OTCFacet is IOTCFacet, FacetBase {
         require(buffer != address(0),                      "OTCFacet/buffer-not-set");
         require(parameters.assetWhitelisted[assetToClaim], "OTCFacet/asset-not-whitelisted");
 
-        uint256 amount           = IERC20Like(assetToClaim).balanceOf(buffer);
+        address proxy = _getSharedControllerStorage().proxy;
+
+        uint256 startingBalance = IERC20Like(assetToClaim).balanceOf(proxy);
+
+        IBuffer(buffer).doCall(
+            assetToClaim,
+            abi.encodeCall(IERC20Like.transfer, (proxy, IERC20Like(assetToClaim).balanceOf(buffer)))
+        );
+
+        uint256 amount = IERC20Like(assetToClaim).balanceOf(proxy) - startingBalance;
+
+        require(amount > 0, "OTCFacet/zero-claimed");
+
         uint256 normalizedAmount = _toNormalizedAmount(assetToClaim, amount);
 
         $.states[exchange].normalizedClaimed += normalizedAmount;
-
-        _transferFrom(assetToClaim, buffer, amount);
 
         emit OTCClaimed(exchange, buffer, assetToClaim, amount, normalizedAmount);
     }
@@ -204,7 +214,12 @@ contract OTCFacet is IOTCFacet, FacetBase {
         return _getFacetStorage().parameters[exchange].normalizedRate;
     }
 
-    function getIsWhitelisted(address exchange, address asset) external view override returns (bool) {
+    function getIsWhitelisted(address exchange, address asset)
+        external
+        view
+        override
+        returns (bool)
+    {
         return _getFacetStorage().parameters[exchange].assetWhitelisted[asset];
     }
 
