@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.34;
 
+/**
+ * @title  IBuffer
+ * @notice Proxy contract that executes calls, value calls, and delegate calls.
+ */
 interface IBuffer {
 
     /**********************************************************************************************/
