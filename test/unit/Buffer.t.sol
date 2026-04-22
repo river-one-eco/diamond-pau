@@ -24,10 +24,19 @@ contract Buffer_Tests is Test {
     }
 
     /**********************************************************************************************/
-    /*** Initial State Tests                                                                    ***/
+    /*** Constructor Tests                                                                      ***/
     /**********************************************************************************************/
 
-    function test_constructor() external view {
+    function test_constructor_zeroOwner() external {
+        vm.expectRevert(abi.encodeWithSelector(IBuffer.ZeroOwner.selector));
+        vm.prank(deployer);
+        new Buffer(address(0));
+    }
+
+    function test_constructor() external {
+        vm.prank(deployer);
+        Buffer buffer = new Buffer(owner);
+
         assertEq(buffer.owner(), owner);
     }
 

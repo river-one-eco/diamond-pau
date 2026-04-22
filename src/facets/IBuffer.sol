@@ -18,6 +18,9 @@ interface IBuffer {
      */
     error NotOwner(address caller, address owner);
 
+    /// @notice Thrown when the owner is the zero address.
+    error ZeroOwner();
+
     /**********************************************************************************************/
     /*** Interactive Functions                                                                  ***/
     /**********************************************************************************************/
