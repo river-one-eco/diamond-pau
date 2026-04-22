@@ -1,21 +1,31 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.34;
 
-import { ApproveLib }     from "../../libraries/ApproveLib.sol";
-import { makeAddressKey } from "../../libraries/RateLimitHelpers.sol";
+import { ApproveLib } from "../../libraries/ApproveLib.sol";
 
 import { IALMProxy }   from "../../interfaces/IALMProxy.sol";
 import { IRateLimits } from "../../interfaces/IRateLimits.sol";
 
 import { IFacet } from "../IFacet.sol";
 
-import { Facet } from "../Facet.sol";
+import { IBuffer } from "../IBuffer.sol";
+import { Facet }   from "../Facet.sol";
 
-import { IWEETHFacet } from "./IWEETHFacet.sol";
+import { IWEETHFacet }  from "./IWEETHFacet.sol";
+
+import { WEETHBuffer } from "./WEETHBuffer.sol";
 
 interface IEETHLike {
 
     function liquidityPool() external view returns (address);
+
+}
+
+interface IERC20Like {
+
+    function transfer(address to, uint256 amount) external returns (bool);
+
+    function balanceOf(address owner) external view returns (uint256);
 
 }
 
@@ -29,6 +39,8 @@ interface ILiquidityPoolLike {
 
     function requestWithdraw(address receiver, uint256 amount) external returns (uint256 requestId);
 
+    function withdrawRequestNFT() external view returns (address);
+
 }
 
 interface IWEETHLike {
@@ -41,19 +53,44 @@ interface IWEETHLike {
 
 }
 
-interface IWEETHModuleLike {
-
-    function claimWithdrawal(uint256 requestId) external returns (uint256 ethReceived);
-
-}
-
 interface IWETHLike {
+
+    function deposit() external payable;
 
     function withdraw(uint256 amount) external;
 
 }
 
+interface IWithdrawRequestNFTLike {
+
+    function claimWithdraw(uint256 requestId) external;
+
+    function isFinalized(uint256 requestId) external view returns (bool);
+
+    function isValid(uint256 requestId) external view returns (bool);
+
+}
+
 contract WEETHFacet is IWEETHFacet, Facet {
+
+    /**********************************************************************************************/
+    /*** Facet Storage Domain                                                                   ***/
+    /**********************************************************************************************/
+
+    /// @custom:storage-location erc7201:sky.pau.storage.WEETHFacet.v1
+    struct FacetStorage {
+        address buffer;
+    }
+
+    // keccak256(abi.encode(uint256(keccak256("sky.pau.storage.WEETHFacet.v1")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 internal constant FACET_STORAGE_LOCATION =
+        0x087bb3711461a2b608e03039b70c79e87f693cffc9be142fc6eadf16219e5900;
+
+    function _getFacetStorage() internal pure returns (FacetStorage storage $) {
+        assembly {
+            $.slot := FACET_STORAGE_LOCATION
+        }
+    }
 
     /**********************************************************************************************/
     /*** Constants                                                                              ***/
@@ -141,7 +178,7 @@ contract WEETHFacet is IWEETHFacet, Facet {
     }
 
     /// @inheritdoc IWEETHFacet
-    function requestWithdraw(address weethModule, uint256 weethShares, uint256 minEETHShares)
+    function requestWithdraw(uint256 weethShares, uint256 minEETHShares)
         external
         override
         nonReentrant
@@ -163,59 +200,122 @@ contract WEETHFacet is IWEETHFacet, Facet {
             (uint256)
         );
 
+        IRateLimits($.rateLimits).triggerRateLimitDecrease(LIMIT_REQUEST_WITHDRAW, eethAmount);
+
         // Protect against cumulative rate slippage across both conversions.
         require(
             ILiquidityPoolLike(liquidityPool).sharesForAmount(eethAmount) >= minEETHShares,
             "WEETHFacet/slippage-too-high"
         );
 
-        // NOTE: An authorized weethModule is enforced by the rate limit key.
-        IRateLimits($.rateLimits).triggerRateLimitDecrease(
-            makeAddressKey(LIMIT_REQUEST_WITHDRAW, weethModule),
-            eethAmount
-        );
-
         // Request withdrawal of ETH from eETH.
         ApproveLib.approve(eeth, proxy, liquidityPool, eethAmount);
+
+        address buffer = _getOrCreateBuffer();
 
         requestId = abi.decode(
             IALMProxy(proxy).doCall(
                 liquidityPool,
-                abi.encodeCall(ILiquidityPoolLike.requestWithdraw, (weethModule, eethAmount))
+                abi.encodeCall(ILiquidityPoolLike.requestWithdraw, (buffer, eethAmount))
             ),
             (uint256)
         );
 
-        emit WEETHRequestWithdraw(weethModule, requestId, eethAmount, weethShares);
+        emit WEETHRequestWithdraw(buffer, requestId, eethAmount, weethShares);
     }
 
     /// @inheritdoc IWEETHFacet
-    function claimWithdrawal(address weethModule, uint256 requestId)
+    function claimWithdrawal(uint256 requestId)
         external
         override
         nonReentrant
         onlyRole(RELAYER_ROLE)
         returns (uint256 wethReceived)
     {
-        SharedControllerStorage storage $ = _getSharedControllerStorage();
+        address eeth               = IWEETHLike(weeth).eETH();
+        address liquidityPool      = IEETHLike(eeth).liquidityPool();
+        address withdrawRequestNFT = ILiquidityPoolLike(liquidityPool).withdrawRequestNFT();
 
-        // NOTE: An authorized weethModule is enforced by the rate limit key.
         require(
-            IRateLimits($.rateLimits).getRateLimitData(
-                makeAddressKey(LIMIT_REQUEST_WITHDRAW, weethModule)
-            ).maxAmount > 0,
-            "WEETHFacet/invalid-action"
+            IWithdrawRequestNFTLike(withdrawRequestNFT).isValid(requestId),
+            "WEETHFacet/invalid-request-id"
         );
 
-        wethReceived = abi.decode(
-            IALMProxy($.proxy).doCall(
-                weethModule,
-                abi.encodeCall(IWEETHModuleLike.claimWithdrawal, (requestId))
-            ),
-            (uint256)
+        require(
+            IWithdrawRequestNFTLike(withdrawRequestNFT).isFinalized(requestId),
+            "WEETHFacet/request-not-finalized"
         );
 
-        emit WEETHClaimWithdrawal(weethModule, requestId, wethReceived);
+        address proxy = _getSharedControllerStorage().proxy;
+        address buffer = _getOrCreateBuffer();
+
+        // Instruct the proxy to instruct the buffer to claim the withdrawal of ETH from eETH.
+        IALMProxy(proxy).doCall(
+            buffer,
+            abi.encodeCall(
+                IBuffer.doCall,
+                (
+                    withdrawRequestNFT,
+                    abi.encodeCall(IWithdrawRequestNFTLike.claimWithdraw, (requestId))
+                )
+            )
+        );
+
+        // Instruct the proxy to instruct the buffer to deposit the ETH into WETH.
+        IALMProxy(proxy).doCall(
+            buffer,
+            abi.encodeCall(
+                IBuffer.doCallWithValue,
+                (
+                    weth,
+                    abi.encodeCall(IWETHLike.deposit, ()),
+                    buffer.balance
+                )
+            )
+        );
+
+        uint256 startingBalance = IERC20Like(weth).balanceOf(proxy);
+
+        // Instruct the proxy to instruct the buffer to transfer the ETH into WETH.
+        IALMProxy(proxy).doCall(
+            buffer,
+            abi.encodeCall(
+                IBuffer.doCall,
+                (
+                    weth,
+                    abi.encodeCall(IERC20Like.transfer, (proxy, IERC20Like(weth).balanceOf(buffer)))
+                )
+            )
+        );
+
+        wethReceived = IERC20Like(weth).balanceOf(proxy) - startingBalance;
+
+        emit WEETHClaimWithdrawal(buffer, requestId, wethReceived);
+    }
+
+    /**********************************************************************************************/
+    /*** External Variable Getters                                                              ***/
+    /**********************************************************************************************/
+
+    /// @inheritdoc IWEETHFacet
+    function buffer() external view override returns (address) {
+        return _getFacetStorage().buffer;
+    }
+
+    /**********************************************************************************************/
+    /*** Internal Interactive Relayer Functions                                                 ***/
+    /**********************************************************************************************/
+
+    function _getOrCreateBuffer() internal returns (address buffer) {
+        FacetStorage storage $ = _getFacetStorage();
+
+        buffer = $.buffer;
+
+        if (buffer != address(0)) return buffer;
+
+        buffer = address(new WEETHBuffer{salt: bytes32(0)}(_getSharedControllerStorage().proxy));
+
+        emit WEETHBufferCreated($.buffer = buffer);
     }
 
 }

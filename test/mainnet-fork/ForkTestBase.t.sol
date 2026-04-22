@@ -1161,7 +1161,7 @@ abstract contract ForkTestBase is DssTest {
 
         vm.label(weethFacet, "WEETHFacet");
 
-        IEnumerableIntegrations.Wire[] memory wires = new IEnumerableIntegrations.Wire[](5);
+        IEnumerableIntegrations.Wire[] memory wires = new IEnumerableIntegrations.Wire[](6);
 
         wires[0] = IEnumerableIntegrations.Wire(
             IMainnetControllerFull.depositToWeETH.selector,
@@ -1186,6 +1186,11 @@ abstract contract ForkTestBase is DssTest {
         wires[4] = IEnumerableIntegrations.Wire(
             IMainnetControllerFull.LIMIT_WEETH_REQUEST_WITHDRAW.selector,
             IWEETHFacet.LIMIT_REQUEST_WITHDRAW.selector
+        );
+
+        wires[5] = IEnumerableIntegrations.Wire(
+            IMainnetControllerFull.weethBuffer.selector,
+            IWEETHFacet.buffer.selector
         );
 
         IEnumerableIntegrations.Config memory config = IEnumerableIntegrations.Config({

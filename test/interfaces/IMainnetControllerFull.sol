@@ -488,19 +488,17 @@ abstract contract IMainnetControllerFull is IController, Controller {
         virtual
         returns (uint256 shares);
 
-    function claimWithdrawalFromWeETH(address weethModule, uint256 requestId)
+    function claimWithdrawalFromWeETH(uint256 requestId)
         external
         virtual
         returns (uint256 ethReceived);
 
-    function requestWithdrawFromWeETH(
-        address weethModule,
-        uint256 weethShares,
-        uint256 minEETHShares
-    )
+    function requestWithdrawFromWeETH(uint256 weethShares, uint256 minEETHShares)
         external
         virtual
         returns (uint256 requestId);
+
+    function weethBuffer() external view virtual returns (address);
 
     /**********************************************************************************************/
     /*** WrapProxyETHFacet actions                                                              ***/
