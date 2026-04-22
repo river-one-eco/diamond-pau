@@ -4,7 +4,7 @@ pragma solidity ^0.8.34;
 import { ReentrancyGuard } from "../../../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
 import { IEnumerableIntegrations } from "../../../src/interfaces/IEnumerableIntegrations.sol";
-import { IFacetBase }              from "../../../src/facets/IFacetBase.sol";
+import { IFacet }                  from "../../../src/facets/IFacet.sol";
 import { IOTCFacet }               from "../../../src/facets/otc/IOTCFacet.sol";
 
 import { Buffer } from "../../../src/facets/Buffer.sol";
@@ -119,7 +119,7 @@ contract Controller_OTCFacet_Admin_Tests is OTCFacet_TestBase {
     function test_setBuffer_notAdmin() external {
         vm.expectRevert(
             abi.encodeWithSelector(
-                IFacetBase.AccessControlUnauthorizedAccount.selector,
+                IFacet.AccessControlUnauthorizedAccount.selector,
                 unauthorized,
                 DEFAULT_ADMIN_ROLE
             )
@@ -130,7 +130,7 @@ contract Controller_OTCFacet_Admin_Tests is OTCFacet_TestBase {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                IFacetBase.AccessControlUnauthorizedAccount.selector,
+                IFacet.AccessControlUnauthorizedAccount.selector,
                 relayer,
                 DEFAULT_ADMIN_ROLE
             )
@@ -198,7 +198,7 @@ contract Controller_OTCFacet_Admin_Tests is OTCFacet_TestBase {
     function test_setMaxSlippage_notAdmin() external {
         vm.expectRevert(
             abi.encodeWithSelector(
-                IFacetBase.AccessControlUnauthorizedAccount.selector,
+                IFacet.AccessControlUnauthorizedAccount.selector,
                 unauthorized,
                 DEFAULT_ADMIN_ROLE
             )
@@ -209,7 +209,7 @@ contract Controller_OTCFacet_Admin_Tests is OTCFacet_TestBase {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                IFacetBase.AccessControlUnauthorizedAccount.selector,
+                IFacet.AccessControlUnauthorizedAccount.selector,
                 relayer,
                 DEFAULT_ADMIN_ROLE
             )
@@ -262,7 +262,7 @@ contract Controller_OTCFacet_Admin_Tests is OTCFacet_TestBase {
     function test_setRechargeRate_notAdmin() external {
         vm.expectRevert(
             abi.encodeWithSelector(
-                IFacetBase.AccessControlUnauthorizedAccount.selector,
+                IFacet.AccessControlUnauthorizedAccount.selector,
                 unauthorized,
                 DEFAULT_ADMIN_ROLE
             )
@@ -273,7 +273,7 @@ contract Controller_OTCFacet_Admin_Tests is OTCFacet_TestBase {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                IFacetBase.AccessControlUnauthorizedAccount.selector,
+                IFacet.AccessControlUnauthorizedAccount.selector,
                 relayer,
                 DEFAULT_ADMIN_ROLE
             )
@@ -320,7 +320,7 @@ contract Controller_OTCFacet_Admin_Tests is OTCFacet_TestBase {
     function test_setIsWhitelisted_notAdmin() external {
         vm.expectRevert(
             abi.encodeWithSelector(
-                IFacetBase.AccessControlUnauthorizedAccount.selector,
+                IFacet.AccessControlUnauthorizedAccount.selector,
                 unauthorized,
                 DEFAULT_ADMIN_ROLE
             )
@@ -331,7 +331,7 @@ contract Controller_OTCFacet_Admin_Tests is OTCFacet_TestBase {
 
         vm.expectRevert(
             abi.encodeWithSelector(
-                IFacetBase.AccessControlUnauthorizedAccount.selector,
+                IFacet.AccessControlUnauthorizedAccount.selector,
                 relayer,
                 DEFAULT_ADMIN_ROLE
             )

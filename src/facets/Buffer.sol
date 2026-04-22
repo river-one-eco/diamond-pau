@@ -13,6 +13,7 @@ contract Buffer is IBuffer {
     /*** Declarations                                                                           ***/
     /**********************************************************************************************/
 
+    /// @inheritdoc IBuffer
     address public immutable owner;
 
     /**********************************************************************************************/
@@ -36,6 +37,7 @@ contract Buffer is IBuffer {
     /*** External Interactive Controller Functions                                              ***/
     /**********************************************************************************************/
 
+    /// @inheritdoc IBuffer
     function doCall(address target, bytes calldata data)
         external
         override
@@ -45,6 +47,7 @@ contract Buffer is IBuffer {
         return target.functionCall(data);
     }
 
+    /// @inheritdoc IBuffer
     function doCallWithValue(address target, bytes calldata data, uint256 value)
         external
         payable
@@ -55,6 +58,7 @@ contract Buffer is IBuffer {
         return target.functionCallWithValue(data, value);
     }
 
+    /// @inheritdoc IBuffer
     function doDelegateCall(address target, bytes calldata data)
         external
         override
