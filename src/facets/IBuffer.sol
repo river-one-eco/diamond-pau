@@ -12,11 +12,11 @@ interface IBuffer {
     /**********************************************************************************************/
 
     /**
-     * @notice Thrown when the caller is not the admin.
+     * @notice Thrown when the caller is not the owner.
      * @param  caller The address of the caller.
-     * @param  admin  The address of the admin.
+     * @param  owner  The address of the owner.
      */
-    error NotAdmin(address caller, address admin);
+    error NotOwner(address caller, address owner);
 
     /**********************************************************************************************/
     /*** Interactive Functions                                                                  ***/
@@ -59,7 +59,7 @@ interface IBuffer {
     /*** Variables                                                                              ***/
     /**********************************************************************************************/
 
-    /// @notice The admin address.
-    function admin() external view returns (address);
+    /// @notice The owner address.
+    function owner() external view returns (address);
 
 }

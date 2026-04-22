@@ -23,6 +23,8 @@ interface IControllerLike {
 
     function setRechargeRate(address exchange, uint256 rechargeRate18) external;
 
+    function updateIntegrations(bytes32[] memory integrationIds) external;
+
     function getBuffer(address exchange) external view returns (address);
 
     function getIsWhitelisted(address exchange, address asset) external view returns (bool);
@@ -31,7 +33,7 @@ interface IControllerLike {
 
     function getRechargeRate(address exchange) external view returns (uint256);
 
-    function updateIntegrations(bytes32[] memory integrationIds) external;
+    function proxy() external view returns (address);
 
 }
 
@@ -162,7 +164,7 @@ contract Controller_OTCFacet_Admin_Tests is OTCFacet_TestBase {
 
         address expectedBuffer = computeCreate2Address(
             keccak256(abi.encode(exchange)),
-            keccak256(type(Buffer).creationCode),
+            keccak256(abi.encodePacked(type(Buffer).creationCode, abi.encode(controller.proxy()))),
             address(controller)
         );
 
@@ -179,6 +181,8 @@ contract Controller_OTCFacet_Admin_Tests is OTCFacet_TestBase {
         assertEq(buffer, expectedBuffer);
 
         assertEq(controller.getBuffer(exchange), expectedBuffer);
+
+        assertEq(Buffer(payable(buffer)).owner(), controller.proxy());
     }
 
     /**********************************************************************************************/

@@ -12,6 +12,7 @@ import { Buffer } from "../../src/facets/Buffer.sol";
 contract Buffer_Tests is Test {
 
     address internal deployer     = makeAddr("deployer");
+    address internal owner        = makeAddr("owner");
     address internal target       = makeAddr("target");
     address internal unauthorized = makeAddr("unauthorized");
 
@@ -19,7 +20,7 @@ contract Buffer_Tests is Test {
 
     function setUp() external {
         vm.prank(deployer);
-        buffer = new Buffer();
+        buffer = new Buffer(owner);
     }
 
     /**********************************************************************************************/
@@ -27,15 +28,15 @@ contract Buffer_Tests is Test {
     /**********************************************************************************************/
 
     function test_constructor() external view {
-        assertEq(buffer.admin(), deployer);
+        assertEq(buffer.owner(), owner);
     }
 
     /**********************************************************************************************/
     /*** doCall Tests                                                                           ***/
     /**********************************************************************************************/
 
-    function test_doCall_notAdmin() external {
-        vm.expectRevert(abi.encodeWithSelector(IBuffer.NotAdmin.selector, unauthorized, deployer));
+    function test_doCall_notOwner() external {
+        vm.expectRevert(abi.encodeWithSelector(IBuffer.NotOwner.selector, unauthorized, owner));
         vm.prank(unauthorized);
         buffer.doCall(target, "");
     }
@@ -47,7 +48,7 @@ contract Buffer_Tests is Test {
         vm.mockCallRevert(target, callData, revertData);
 
         vm.expectRevert(revertData);
-        vm.prank(deployer);
+        vm.prank(owner);
         buffer.doCall(target, callData);
     }
 
@@ -58,7 +59,7 @@ contract Buffer_Tests is Test {
 
         _expectAndMockCall(target, callData, abi.encode(expectedReturn));
 
-        vm.prank(deployer);
+        vm.prank(owner);
         bytes memory returnData = buffer.doCall(target, callData);
 
         assertEq(abi.decode(returnData, (uint256)), expectedReturn);
@@ -68,8 +69,8 @@ contract Buffer_Tests is Test {
     /*** doCallWithValue Tests                                                                  ***/
     /**********************************************************************************************/
 
-    function test_doCallWithValue_notAdmin() external {
-        vm.expectRevert(abi.encodeWithSelector(IBuffer.NotAdmin.selector, unauthorized, deployer));
+    function test_doCallWithValue_notOwner() external {
+        vm.expectRevert(abi.encodeWithSelector(IBuffer.NotOwner.selector, unauthorized, owner));
         vm.prank(unauthorized);
         buffer.doCallWithValue(target, "", 0);
     }
@@ -85,7 +86,7 @@ contract Buffer_Tests is Test {
         vm.mockCallRevert(target, value, callData, revertData);
 
         vm.expectRevert(revertData);
-        vm.prank(deployer);
+        vm.prank(owner);
         buffer.doCallWithValue(target, callData, value);
     }
 
@@ -99,7 +100,7 @@ contract Buffer_Tests is Test {
 
         _expectAndMockCall(target, value, callData, abi.encode(expectedReturn));
 
-        vm.prank(deployer);
+        vm.prank(owner);
         bytes memory returnData = buffer.doCallWithValue(target, callData, value);
 
         assertEq(abi.decode(returnData, (uint256)), expectedReturn);
@@ -111,11 +112,11 @@ contract Buffer_Tests is Test {
         uint256 expectedReturn = 84;
         uint256 value = 1 ether;
 
-        deal(deployer, value);
+        deal(owner, value);
 
         _expectAndMockCall(target, value, callData, abi.encode(expectedReturn));
 
-        vm.prank(deployer);
+        vm.prank(owner);
         bytes memory returnData = buffer.doCallWithValue{value: value}(target, callData, value);
 
         assertEq(abi.decode(returnData, (uint256)), expectedReturn);
@@ -125,8 +126,8 @@ contract Buffer_Tests is Test {
     /*** doDelegateCall Tests                                                                   ***/
     /**********************************************************************************************/
 
-    function test_doDelegateCall_notAdmin() external {
-        vm.expectRevert(abi.encodeWithSelector(IBuffer.NotAdmin.selector, unauthorized, deployer));
+    function test_doDelegateCall_notOwner() external {
+        vm.expectRevert(abi.encodeWithSelector(IBuffer.NotOwner.selector, unauthorized, owner));
         vm.prank(unauthorized);
         buffer.doDelegateCall(target, "");
     }
@@ -138,7 +139,7 @@ contract Buffer_Tests is Test {
         vm.mockCallRevert(target, callData, revertData);
 
         vm.expectRevert(revertData);
-        vm.prank(deployer);
+        vm.prank(owner);
         buffer.doDelegateCall(target, callData);
     }
 
@@ -149,7 +150,7 @@ contract Buffer_Tests is Test {
 
         vm.mockCall(target, callData, abi.encode(expectedReturn));
 
-        vm.prank(deployer);
+        vm.prank(owner);
         bytes memory returnData = buffer.doDelegateCall(target, callData);
 
         assertEq(abi.decode(returnData, (uint256)), expectedReturn);
@@ -160,15 +161,15 @@ contract Buffer_Tests is Test {
     /**********************************************************************************************/
 
     function test_receive() external {
-        deal(deployer, 1 ether);
+        deal(owner, 1 ether);
 
-        assertEq(deployer.balance,        1 ether);
+        assertEq(owner.balance,           1 ether);
         assertEq(address(buffer).balance, 0);
 
-        vm.prank(deployer);
+        vm.prank(owner);
         payable(address(buffer)).transfer(1 ether);
 
-        assertEq(deployer.balance,        0);
+        assertEq(owner.balance,           0);
         assertEq(address(buffer).balance, 1 ether);
     }
 

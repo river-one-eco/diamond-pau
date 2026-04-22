@@ -86,7 +86,9 @@ contract OTCFacet is IOTCFacet, FacetBase {
 
         require($.parameters[exchange].buffer == address(0), "OTCFacet/buffer-already-set");
 
-        buffer = address(new Buffer{salt: keccak256(abi.encode(exchange))}());
+        address proxy = _getSharedControllerStorage().proxy;
+
+        buffer = address(new Buffer{salt: keccak256(abi.encode(exchange))}(proxy));
 
         emit OTCBufferSet(exchange, $.parameters[exchange].buffer = buffer);
     }
@@ -182,9 +184,18 @@ contract OTCFacet is IOTCFacet, FacetBase {
 
         uint256 startingBalance = IERC20Like(assetToClaim).balanceOf(proxy);
 
-        IBuffer(buffer).doCall(
-            assetToClaim,
-            abi.encodeCall(IERC20Like.transfer, (proxy, IERC20Like(assetToClaim).balanceOf(buffer)))
+        // Instruct the proxy to call the buffer to transfer the asset to the proxy.
+        IALMProxy(proxy).doCall(
+            buffer,
+            abi.encodeCall(
+                IBuffer.doCall,
+                (
+                    assetToClaim,
+                    abi.encodeCall(
+                        IERC20Like.transfer, (proxy, IERC20Like(assetToClaim).balanceOf(buffer))
+                    )
+                )
+            )
         );
 
         uint256 amount = IERC20Like(assetToClaim).balanceOf(proxy) - startingBalance;

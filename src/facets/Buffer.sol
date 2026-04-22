@@ -13,14 +13,14 @@ contract Buffer is IBuffer {
     /*** Declarations                                                                           ***/
     /**********************************************************************************************/
 
-    address public admin;
+    address public immutable owner;
 
     /**********************************************************************************************/
     /*** Modifiers                                                                              ***/
     /**********************************************************************************************/
 
-    modifier onlyAdmin() {
-        require(msg.sender == admin, NotAdmin(msg.sender, admin));
+    modifier onlyOwner() {
+        require(msg.sender == owner, NotOwner(msg.sender, owner));
         _;
     }
 
@@ -28,8 +28,8 @@ contract Buffer is IBuffer {
     /*** Constructor                                                                            ***/
     /**********************************************************************************************/
 
-    constructor() {
-        admin = msg.sender;
+    constructor(address owner_) {
+        owner = owner_;
     }
 
     /**********************************************************************************************/
@@ -39,7 +39,7 @@ contract Buffer is IBuffer {
     function doCall(address target, bytes calldata data)
         external
         override
-        onlyAdmin
+        onlyOwner
         returns (bytes memory result)
     {
         return target.functionCall(data);
@@ -49,7 +49,7 @@ contract Buffer is IBuffer {
         external
         payable
         override
-        onlyAdmin
+        onlyOwner
         returns (bytes memory result)
     {
         return target.functionCallWithValue(data, value);
@@ -58,7 +58,7 @@ contract Buffer is IBuffer {
     function doDelegateCall(address target, bytes calldata data)
         external
         override
-        onlyAdmin
+        onlyOwner
         returns (bytes memory result)
     {
         return target.functionDelegateCall(data);
