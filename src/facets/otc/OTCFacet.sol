@@ -193,7 +193,7 @@ contract OTCFacet is IOTCFacet, Facet {
 
         uint256 startingBalance = IERC20Like(assetToClaim).balanceOf(proxy);
 
-        // Instruct the proxy to call the buffer to transfer the asset to the proxy.
+        // Instruct the proxy to instruct the buffer to transfer the asset to the proxy.
         IALMProxy(proxy).doCall(
             buffer,
             abi.encodeCall(
