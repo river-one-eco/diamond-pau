@@ -192,6 +192,7 @@ contract UniswapV4Facet is IUniswapV4Facet, Facet {
         PoolKey memory poolKey = _getPoolKeyFromPoolId(poolId);
 
         _requirePoolIdMatch(poolId, poolKey);
+        _requireNoHooks(poolKey);
 
         bytes memory callData = _getMintCalldata({
             poolKey    : poolKey,
@@ -245,6 +246,7 @@ contract UniswapV4Facet is IUniswapV4Facet, Facet {
         ( PoolKey memory poolKey, PositionInfo info ) = _getPoolKeyAndPositionInfo(tokenId);
 
         _requirePoolIdMatch(poolId, poolKey);
+        _requireNoHooks(poolKey);
 
         // Since funds are being added to the position, the ticks of the position need to be checked
         // against the current constraints, since it's possible the position was minted under
@@ -290,6 +292,7 @@ contract UniswapV4Facet is IUniswapV4Facet, Facet {
         //       recipient of the tokens, so the worst case is that another account's position is
         //       decreased or closed by the proxy.
         _requirePoolIdMatch(poolId, poolKey);
+        _requireNoHooks(poolKey);
 
         bytes memory callData = _getDecreaseLiquidityCallData({
             poolKey           : poolKey,
@@ -323,6 +326,7 @@ contract UniswapV4Facet is IUniswapV4Facet, Facet {
         PoolKey memory poolKey = _getPoolKeyFromPoolId(poolId);
 
         _requirePoolIdMatch(poolId, poolKey);
+        _requireNoHooks(poolKey);
 
         require(
             tokenIn == Currency.unwrap(poolKey.currency0) ||
@@ -759,6 +763,10 @@ contract UniswapV4Facet is IUniswapV4Facet, Facet {
 
     function _requirePoolIdMatch(bytes32 poolId, PoolKey memory poolKey) internal pure {
         require(keccak256(abi.encode(poolKey)) == poolId, "UniswapV4Facet/poolKey-poolId-mismatch");
+    }
+
+    function _requireNoHooks(PoolKey memory poolKey) internal pure {
+        require(address(poolKey.hooks) == address(0), "UniswapV4Facet/hooks-not-allowed");
     }
 
 }
