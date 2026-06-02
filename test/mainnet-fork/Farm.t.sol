@@ -290,4 +290,39 @@ contract MainnetController_Farm_Withdraw_Tests is Farm_TestBase {
         assertEq(IERC20Like(Ethereum.SPK).balanceOf(address(almProxy)), 0); // No reward claimed
     }
 
+    function test_withdrawFromFarm_partialFill() external {
+        bytes32 withdrawKey = mainnetController.farm_getWithdrawRateLimitKey(FARM);
+
+        deal(Ethereum.USDS, address(almProxy), 1_000_000e18);
+
+        vm.prank(allocator);
+        mainnetController.farm_deposit(FARM, 1_000_000e18);
+
+        assertEq(rateLimits.getCurrentRateLimit(withdrawKey),   10_000_000e18);
+        assertEq(USDS.balanceOf(address(almProxy)),             0);
+        assertEq(IERC20Like(FARM).balanceOf(address(almProxy)), 1_000_000e18);
+
+        skip(1 days);
+
+        // Simulate the farm returning fewer tokens than requested (slashing/fees/rounding): mock
+        // withdraw to a no-op so no staking tokens are returned to the proxy.
+        vm.mockCall(FARM, abi.encodeWithSignature("withdraw(uint256)", 1_000_000e18), "");
+
+        vm.record();
+
+        // The facet decrements the rate limit by the ACTUAL amount withdrawn (the balance delta,
+        // here 0), not the requested amount.
+        vm.expectEmit(address(mainnetController));
+        emit IFarmFacet.FarmWithdraw(FARM, 0);
+
+        vm.prank(allocator);
+        mainnetController.farm_withdraw(FARM, 1_000_000e18);
+
+        _assertReentrancyGuardWrittenToTwice();
+
+        assertEq(rateLimits.getCurrentRateLimit(withdrawKey),   10_000_000e18);  // Unchanged: decremented by 0
+        assertEq(USDS.balanceOf(address(almProxy)),             0);              // No funds returned
+        assertEq(IERC20Like(FARM).balanceOf(address(almProxy)), 1_000_000e18);   // Staked position untouched
+    }
+
 }

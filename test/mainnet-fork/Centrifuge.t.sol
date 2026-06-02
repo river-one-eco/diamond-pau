@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.34;
 
+import { ReentrancyGuard } from "../../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
+
 import { Ethereum } from "../../lib/spark-address-registry/src/Ethereum.sol";
 
 import { ICentrifugeFacet } from "../../src/facets/centrifuge/ICentrifugeFacet.sol";
@@ -59,6 +61,12 @@ contract MainnetController_Centrifuge_RequestDepositERC7540_Tests is Centrifuge_
         rateLimits.setRateLimitData(key, 1_000_000e6, uint256(1_000_000e6) / 1 days);
 
         deal(address(usdc), address(almProxy), 1_000_000e6);
+    }
+
+    function test_requestDepositERC7540_reentrancy() external {
+        _setControllerEntered();
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        mainnetController.erc7540_requestDeposit(address(jTreasuryVault), 1_000_000e6);
     }
 
     function test_requestDepositERC7540_notAllocator() external {
@@ -141,6 +149,12 @@ contract MainnetController_Centrifuge_ClaimDepositERC7540_Tests is Centrifuge_Te
         rateLimits.setRateLimitData(requestDepositKey, 1_500_000e6, uint256(1_500_000e6) / 1 days);
         rateLimits.setRateLimitData(key,               1_500_000e6, uint256(1_500_000e6) / 1 days);
         vm.stopPrank();
+    }
+
+    function test_claimDepositERC7540_reentrancy() external {
+        _setControllerEntered();
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        mainnetController.erc7540_claimDeposit(address(jTreasuryVault));
     }
 
     function test_claimDepositERC7540_notAllocator() external {
@@ -493,6 +507,12 @@ contract MainnetController_Centrifuge_RequestRedeemERC7540_Tests is Centrifuge_T
         rateLimits.setRateLimitData(key, 1_000_000e6, uint256(1_000_000e6) / 1 days);
     }
 
+    function test_requestRedeemERC7540_reentrancy() external {
+        _setControllerEntered();
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        mainnetController.erc7540_requestRedeem(address(jTreasuryVault), 1_000_000e6);
+    }
+
     function test_requestRedeemERC7540_notAllocator() external {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
@@ -582,6 +602,12 @@ contract MainnetController_Centrifuge_ClaimRedeemERC7540_Tests is Centrifuge_Tes
         rateLimits.setRateLimitData(requestRedeemKey, 2_000_000e6, uint256(2_000_000e6) / 1 days);
         rateLimits.setRateLimitData(key,              2_000_000e6, uint256(2_000_000e6) / 1 days);
         vm.stopPrank();
+    }
+
+    function test_claimRedeemERC7540_reentrancy() external {
+        _setControllerEntered();
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        mainnetController.erc7540_claimRedeem(address(jTreasuryVault));
     }
 
     function test_claimRedeemERC7540_notAllocator() external {

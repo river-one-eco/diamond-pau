@@ -66,6 +66,12 @@ abstract contract Pendle_TestBase is ForkTestBase {
 
 contract MainnetController_Pendle_Redeem_FailureTests is Pendle_TestBase {
 
+    function test_redeemPendlePT_reentrancy() public {
+        _setControllerEntered();
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        mainnetController.pendle_redeem(address(pendleMarket), 500_000e18, 1);
+    }
+
     function test_redeemPendlePT_notAllocator() public {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
@@ -191,11 +197,15 @@ contract MainnetController_Pendle_Redeem_SuccessTests is Pendle_TestBase {
         uint256 pyIndexCurrent = IYTLike(yt).pyIndexCurrent();
         uint256 exactAmountOut = 500_000e18 * 1e18 / pyIndexCurrent;
 
+        vm.record();
+
         vm.expectEmit(address(mainnetController));
         emit IPendleFacet.PendleRedeem(address(pendleMarket), 500_000e18, exactAmountOut);
 
         vm.prank(allocator);
         mainnetController.pendle_redeem(address(pendleMarket), 500_000e18, exactAmountOut);
+
+        _assertReentrancyGuardWrittenToTwice();
 
         assertEq(IERC20Like(pt).balanceOf(address(almProxy)), 500_000e18);
         assertEq(yieldToken.balanceOf(address(almProxy)),     500_000e18 * 1e18 / pyIndexCurrent);
