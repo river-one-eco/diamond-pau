@@ -179,6 +179,18 @@ contract MainnetController_USDS_Burn_Tests is USDS_TestBase {
         mainnetController.usds_burn(1e18);
     }
 
+    function test_burnUSDS_rateLimitBoundary() external {
+        vm.prank(allocator);
+        mainnetController.usds_mint(5_000_000e18);
+
+        vm.expectRevert("RateLimits/rate-limit-exceeded");
+        vm.prank(allocator);
+        mainnetController.usds_burn(5_000_000e18 + 1);
+
+        vm.prank(allocator);
+        mainnetController.usds_burn(5_000_000e18);
+    }
+
     function test_burnUSDS() external {
         // Setup
         vm.expectEmit(address(mainnetController));

@@ -115,6 +115,43 @@ contract MainnetController_OTC_SetOTCBuffer_Tests is OTC_TestBase {
         mainnetController.otc_setBuffer(exchange, makeAddr("new-buffer"));
     }
 
+    function test_setOTCBuffer_afterSwapReady() external {
+        vm.startPrank(Ethereum.SPARK_PROXY);
+        mainnetController.otc_setBuffer(exchange, address(otcBuffer));
+        rateLimits.setRateLimitData(mainnetController.otc_getSendRateLimitKey(exchange,  Ethereum.USDT), 10_000_000e6,      0);
+        rateLimits.setRateLimitData(mainnetController.otc_getClaimRateLimitKey(exchange, Ethereum.USDT), type(uint256).max, 0);
+        vm.stopPrank();
+
+        deal(Ethereum.USDT, address(almProxy), 5_000_000e6);
+
+        // Execute and fully settle a swap so the exchange is ready for buffer rotation.
+        vm.prank(allocator);
+        mainnetController.otc_send(exchange, Ethereum.USDT, 5_000_000e6);
+
+        // 5m * 99.95% slippage = 4.9975m returned meets the readiness threshold exactly.
+        deal(Ethereum.USDT, address(otcBuffer), 4_997_500e6);
+
+        vm.prank(allocator);
+        mainnetController.otc_claim(exchange, Ethereum.USDT);
+
+        ( , uint256 sentTimestamp, ) = mainnetController.otc_getState(exchange);
+
+        assertEq(sentTimestamp,                                  block.timestamp);
+        assertEq(mainnetController.otc_getIsSwapReady(exchange), true);
+
+        // sentTimestamp != 0 but the swap is ready, so setBuffer takes the getIsSwapReady branch
+        // of the require and rotates the buffer instead of reverting "swap-in-progress".
+        address newBuffer = makeAddr("new-buffer");
+
+        vm.expectEmit(address(mainnetController));
+        emit IOTCFacet.OTCBufferSet(exchange, newBuffer);
+
+        vm.prank(Ethereum.SPARK_PROXY);
+        mainnetController.otc_setBuffer(exchange, newBuffer);
+
+        assertEq(mainnetController.otc_getBuffer(exchange), newBuffer);
+    }
+
 }
 
 contract MainnetController_OTC_Send_Tests is OTC_TestBase {
@@ -515,6 +552,37 @@ contract MainnetController_OTC_Send_Tests is OTC_TestBase {
 
         _assertOTCState({
             normalizedSent    : 1_000_000e18,
+            sentTimestamp     : block.timestamp,
+            normalizedClaimed : 0
+        });
+    }
+
+    function test_otcSend_highDecimalsPrecisionLoss() external {
+        // A token with >18 decimals: _toNormalizedAmount divides by 10**decimals, truncating dust
+        // below 18-decimal precision (see the NOTE in OTCFacet.send).
+        ERC20 token = new ERC20(24);
+
+        bytes32 sendRateLimitKey = mainnetController.otc_getSendRateLimitKey(exchange, address(token));
+
+        vm.startPrank(Ethereum.SPARK_PROXY);
+        mainnetController.otc_setBuffer(exchange, address(otcBuffer));
+        rateLimits.setRateLimitData(sendRateLimitKey, type(uint256).max, 0);
+        vm.stopPrank();
+
+        // 5m tokens plus a single base unit, the trailing base unit is below 18-decimal precision.
+        uint256 amount = 5_000_000e24 + 1;
+
+        token.mint(address(almProxy), amount);
+
+        vm.prank(allocator);
+        mainnetController.otc_send(exchange, address(token), amount);
+
+        assertEq(token.balanceOf(address(almProxy)), 0);
+        assertEq(token.balanceOf(exchange),          amount);
+
+        // normalizedSent = amount * 1e18 / 1e24, truncating the +1 base unit (precision loss).
+        _assertOTCState({
+            normalizedSent    : 5_000_000e18,
             sentTimestamp     : block.timestamp,
             normalizedClaimed : 0
         });
