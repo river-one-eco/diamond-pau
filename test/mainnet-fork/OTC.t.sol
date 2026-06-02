@@ -486,6 +486,40 @@ contract MainnetController_OTC_Send_Tests is OTC_TestBase {
         assertFalse(mainnetController.otc_getIsSwapReady(exchange));
     }
 
+    function test_otcSend_resetsNormalizedClaimed() external {
+        vm.startPrank(Ethereum.SPARK_PROXY);
+        mainnetController.otc_setBuffer(exchange, address(otcBuffer));
+        rateLimits.setRateLimitData(mainnetController.otc_getSendRateLimitKey(exchange,  Ethereum.USDT), 10_000_000e6,      0);
+        rateLimits.setRateLimitData(mainnetController.otc_getClaimRateLimitKey(exchange, Ethereum.USDT), type(uint256).max, 0);
+        vm.stopPrank();
+
+        deal(Ethereum.USDT, address(almProxy), 10_000_000e6);
+
+        vm.prank(allocator);
+        mainnetController.otc_send(exchange, Ethereum.USDT, 5_000_000e6);
+
+        // Claim the full amount back so normalizedClaimed > 0 and the next swap is ready.
+        deal(Ethereum.USDT, address(otcBuffer), 5_000_000e6);
+        vm.prank(allocator);
+        mainnetController.otc_claim(exchange, Ethereum.USDT);
+
+        _assertOTCState({
+            normalizedSent    : 5_000_000e18,
+            sentTimestamp     : block.timestamp,
+            normalizedClaimed : 5_000_000e18
+        });
+
+        // A new send resets normalizedClaimed to zero and overwrites normalizedSent/sentTimestamp.
+        vm.prank(allocator);
+        mainnetController.otc_send(exchange, Ethereum.USDT, 1_000_000e6);
+
+        _assertOTCState({
+            normalizedSent    : 1_000_000e18,
+            sentTimestamp     : block.timestamp,
+            normalizedClaimed : 0
+        });
+    }
+
 }
 
 contract MainnetController_OTC_Claim_Tests is OTC_TestBase {
@@ -616,6 +650,47 @@ contract MainnetController_OTC_Claim_Tests is OTC_TestBase {
             normalizedSent:    0,  // Sent step not done, but this shows its not modified
             sentTimestamp:     0,  // Sent step not done, but this shows its not modified
             normalizedClaimed: 10_000_000e18
+        });
+    }
+
+    function test_otcClaim_accumulatesNormalizedClaimed() external {
+        vm.startPrank(Ethereum.SPARK_PROXY);
+        mainnetController.otc_setBuffer(exchange, address(otcBuffer));
+        rateLimits.setRateLimitData(mainnetController.otc_getSendRateLimitKey(exchange,  Ethereum.USDT), 10_000_000e6,      0);
+        rateLimits.setRateLimitData(mainnetController.otc_getClaimRateLimitKey(exchange, Ethereum.USDT), type(uint256).max, 0);
+        vm.stopPrank();
+
+        deal(Ethereum.USDT, address(almProxy), 5_000_000e6);
+
+        vm.prank(allocator);
+        mainnetController.otc_send(exchange, Ethereum.USDT, 5_000_000e6);
+
+        _assertOTCState({
+            normalizedSent    : 5_000_000e18,
+            sentTimestamp     : block.timestamp,
+            normalizedClaimed : 0
+        });
+
+        // First partial claim.
+        deal(Ethereum.USDT, address(otcBuffer), 2_000_000e6);
+        vm.prank(allocator);
+        mainnetController.otc_claim(exchange, Ethereum.USDT);
+
+        _assertOTCState({
+            normalizedSent    : 5_000_000e18,
+            sentTimestamp     : block.timestamp,
+            normalizedClaimed : 2_000_000e18
+        });
+
+        // Second partial claim accumulates on top of the first.
+        deal(Ethereum.USDT, address(otcBuffer), 1_500_000e6);
+        vm.prank(allocator);
+        mainnetController.otc_claim(exchange, Ethereum.USDT);
+
+        _assertOTCState({
+            normalizedSent    : 5_000_000e18,
+            sentTimestamp     : block.timestamp,
+            normalizedClaimed : 3_500_000e18
         });
     }
 

@@ -11,6 +11,8 @@ import { ForkTestBase } from "./ForkTestBase.t.sol";
 
 interface IERC20Like {
 
+    function allowance(address owner, address spender) external view returns (uint256);
+
     function balanceOf(address account) external view returns (uint256);
 
 }
@@ -107,8 +109,9 @@ contract MainnetController_Farm_Deposit_Tests is Farm_TestBase {
 
         assertEq(rateLimits.getCurrentRateLimit(depositKey), 10_000_000e18);
 
-        assertEq(USDS.balanceOf(address(almProxy)),             1_000_000e18);
-        assertEq(IERC20Like(FARM).balanceOf(address(almProxy)), 0);
+        assertEq(USDS.balanceOf(address(almProxy)),                            1_000_000e18);
+        assertEq(IERC20Like(FARM).balanceOf(address(almProxy)),                0);
+        assertEq(IERC20Like(Ethereum.USDS).allowance(address(almProxy), FARM), 0);
 
         vm.record();
 
@@ -122,8 +125,9 @@ contract MainnetController_Farm_Deposit_Tests is Farm_TestBase {
 
         assertEq(rateLimits.getCurrentRateLimit(depositKey), 9_000_000e18);
 
-        assertEq(USDS.balanceOf(address(almProxy)),             0);
-        assertEq(IERC20Like(FARM).balanceOf(address(almProxy)), 1_000_000e18);
+        assertEq(USDS.balanceOf(address(almProxy)),                            0);
+        assertEq(IERC20Like(FARM).balanceOf(address(almProxy)),                1_000_000e18);
+        assertEq(IERC20Like(Ethereum.USDS).allowance(address(almProxy), FARM), 0);
     }
 
 }

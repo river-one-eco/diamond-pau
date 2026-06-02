@@ -335,6 +335,12 @@ contract MainnetController_Centrifuge_CancelDeposit_Tests is Centrifuge_TestBase
         vm.stopPrank();
     }
 
+    function test_cancelCentrifugeDepositRequest_reentrancy() external {
+        _setControllerEntered();
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        mainnetController.centrifuge_cancelDepositRequest(address(jTreasuryVault));
+    }
+
     function test_cancelCentrifugeDepositRequest_notAllocator() external {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
@@ -406,6 +412,12 @@ contract MainnetController_Centrifuge_ClaimCancelDeposit_Tests is Centrifuge_Tes
         rateLimits.setRateLimitData(cancelDepositKey,  1_000_000e6, uint256(1_000_000e6) / 1 days);
         rateLimits.setRateLimitData(key,               1_000_000e6, uint256(1_000_000e6) / 1 days);
         vm.stopPrank();
+    }
+
+    function test_claimCentrifugeCancelDepositRequest_reentrancy() external {
+        _setControllerEntered();
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        mainnetController.centrifuge_claimCancelDepositRequest(address(jTreasuryVault));
     }
 
     function test_claimCentrifugeCancelDepositRequest_notAllocator() external {
@@ -805,6 +817,12 @@ contract MainnetController_Centrifuge_CancelRedeemRequest_Tests is Centrifuge_Te
         vm.stopPrank();
     }
 
+    function test_cancelCentrifugeRedeemRequest_reentrancy() external {
+        _setControllerEntered();
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        mainnetController.centrifuge_cancelRedeemRequest(address(jTreasuryVault));
+    }
+
     function test_cancelCentrifugeRedeemRequest_notAllocator() external {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
@@ -875,6 +893,12 @@ contract MainnetController_Centrifuge_ClaimCancelRedeemRequest_Tests is Centrifu
         rateLimits.setRateLimitData(cancelRedeemKey,  1_000_000e6, uint256(1_000_000e6) / 1 days);
         rateLimits.setRateLimitData(key,              1_000_000e6, uint256(1_000_000e6) / 1 days);
         vm.stopPrank();
+    }
+
+    function test_claimCentrifugeCancelRedeemRequest_reentrancy() external {
+        _setControllerEntered();
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        mainnetController.centrifuge_claimCancelRedeemRequest(address(jTreasuryVault));
     }
 
     function test_claimCentrifugeCancelRedeemRequest_notAllocator() external {
