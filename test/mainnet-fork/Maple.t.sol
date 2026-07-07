@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity ^0.8.21;
+pragma solidity ^0.8.34;
 
 import { ReentrancyGuard } from "../../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
 import { Ethereum } from "../../lib/spark-address-registry/src/Ethereum.sol";
 
-import { makeAddressKey } from "../../src/RateLimitHelpers.sol";
+import { IERC4626Facet } from "../../src/facets/erc4626/IERC4626Facet.sol";
+
+import { IMapleFacet } from "../../src/facets/maple/IMapleFacet.sol";
 
 import {
     IMapleTokenExtendedLike,
@@ -43,17 +45,20 @@ abstract contract Maple_TestBase is ForkTestBase {
 
     bytes32 internal depositKey;
     bytes32 internal redeemKey;
+    bytes32 internal cancelRedeemKey;
 
-    function setUp() override public {
+    function setUp() public override {
         super.setUp();
 
-        depositKey = makeAddressKey(mainnetController.LIMIT_4626_DEPOSIT(), address(SYRUP));
-        redeemKey  = makeAddressKey(mainnetController.LIMIT_MAPLE_REDEEM(), address(SYRUP));
+        depositKey      = mainnetController.erc4626_getDepositRateLimitKey(address(SYRUP), Ethereum.USDC);
+        redeemKey       = mainnetController.maple_getRequestRedeemRateLimitKey(address(SYRUP));
+        cancelRedeemKey = mainnetController.maple_getCancelRedeemRateLimitKey(address(SYRUP));
 
         vm.startPrank(Ethereum.SPARK_PROXY);
-        rateLimits.setRateLimitData(depositKey, 1_000_000e6, uint256(1_000_000e6) / 1 days);
-        rateLimits.setRateLimitData(redeemKey,  1_000_000e6, uint256(1_000_000e6) / 1 days);
-        mainnetController.setMaxExchangeRate(address(SYRUP), SYRUP.convertToShares(1e18), 2e18);
+        rateLimits.setRateLimitData(depositKey,      1_000_000e6,       uint256(1_000_000e6) / 1 days);
+        rateLimits.setRateLimitData(redeemKey,       1_000_000e6,       uint256(1_000_000e6) / 1 days);
+        rateLimits.setRateLimitData(cancelRedeemKey, type(uint256).max, 0);
+        mainnetController.erc4626_setMaxExchangeRate(address(SYRUP), SYRUP.convertToShares(1e18), 2e18);
         vm.stopPrank();
 
         // Maple onboarding process
@@ -94,13 +99,13 @@ abstract contract Maple_TestBase is ForkTestBase {
 
 contract MainnetController_ERC4626_Maple_Deposit_Tests is Maple_TestBase {
 
-    function test_depositERC4626_maple_notRelayer() external {
+    function test_depositERC4626_maple_notAllocator() external {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            ALLOCATOR_ROLE
         ));
-        mainnetController.depositERC4626(address(SYRUP), 1_000_000e6, 0);
+        mainnetController.erc4626_deposit(address(SYRUP), 1_000_000e6, 0);
     }
 
     function test_depositERC4626_maple_zeroMaxAmount() external {
@@ -108,49 +113,49 @@ contract MainnetController_ERC4626_Maple_Deposit_Tests is Maple_TestBase {
         rateLimits.setRateLimitData(depositKey, 0, 0);
 
         vm.expectRevert("RateLimits/zero-maxAmount");
-        vm.prank(relayer);
-        mainnetController.depositERC4626(address(SYRUP), 1_000_000e6, 0);
+        vm.prank(allocator);
+        mainnetController.erc4626_deposit(address(SYRUP), 1_000_000e6, 0);
     }
 
     function test_depositERC4626_maple_rateLimitBoundary() external {
         deal(Ethereum.USDC, address(almProxy), 1_000_000e6);
 
         vm.expectRevert("RateLimits/rate-limit-exceeded");
-        vm.prank(relayer);
-        mainnetController.depositERC4626(address(SYRUP), 1_000_000e6 + 1, 0);
+        vm.prank(allocator);
+        mainnetController.erc4626_deposit(address(SYRUP), 1_000_000e6 + 1, 0);
 
-        vm.prank(relayer);
-        mainnetController.depositERC4626(address(SYRUP), 1_000_000e6, 0);
+        vm.prank(allocator);
+        mainnetController.erc4626_deposit(address(SYRUP), 1_000_000e6, 0);
     }
 
     function test_depositERC4626_maple_exchangeRateTooHigh() external {
         deal(Ethereum.USDC, address(almProxy), 1_000_000e6);
 
         vm.startPrank(Ethereum.SPARK_PROXY);
-        mainnetController.setMaxExchangeRate(address(SYRUP), SYRUP.convertToShares(1_000_000e6), 1_000_000e6 - 1);
+        mainnetController.erc4626_setMaxExchangeRate(address(SYRUP), SYRUP.convertToShares(1_000_000e6), 1_000_000e6 - 1);
         vm.stopPrank();
 
-        vm.expectRevert("ERC4626Lib/exchange-rate-too-high");
-        vm.prank(relayer);
-        mainnetController.depositERC4626(address(SYRUP), 1_000_000e6, 0);
+        vm.expectRevert("ERC4626Facet/exchange-rate-too-high");
+        vm.prank(allocator);
+        mainnetController.erc4626_deposit(address(SYRUP), 1_000_000e6, 0);
 
         vm.startPrank(Ethereum.SPARK_PROXY);
-        mainnetController.setMaxExchangeRate(address(SYRUP), SYRUP.convertToShares(1_000_000e6), 1_000_000e6);
+        mainnetController.erc4626_setMaxExchangeRate(address(SYRUP), SYRUP.convertToShares(1_000_000e6), 1_000_000e6);
         vm.stopPrank();
 
-        vm.prank(relayer);
-        mainnetController.depositERC4626(address(SYRUP), 1_000_000e6, 0);
+        vm.prank(allocator);
+        mainnetController.erc4626_deposit(address(SYRUP), 1_000_000e6, 0);
     }
 
     function test_depositERC4626_maple_zeroExchangeRate() external {
         deal(Ethereum.USDC, address(almProxy), 1_000_000e6);
 
         vm.prank(Ethereum.SPARK_PROXY);
-        mainnetController.setMaxExchangeRate(address(SYRUP), 0, 0);
+        mainnetController.erc4626_setMaxExchangeRate(address(SYRUP), 0, 0);
 
-        vm.expectRevert("ERC4626Lib/exchange-rate-too-high");
-        vm.prank(relayer);
-        mainnetController.depositERC4626(address(SYRUP), 1_000_000e6, 0);
+        vm.expectRevert("ERC4626Facet/exchange-rate-too-high");
+        vm.prank(allocator);
+        mainnetController.erc4626_deposit(address(SYRUP), 1_000_000e6, 0);
     }
 
     function test_depositERC4626_maple_minSharesOutNotMetBoundary() external {
@@ -159,11 +164,11 @@ contract MainnetController_ERC4626_Maple_Deposit_Tests is Maple_TestBase {
         uint256 overBoundaryShares = SYRUP.convertToShares(1_000_000e6 + 1);
         uint256 atBoundaryShares   = SYRUP.convertToShares(1_000_000e6);
 
-        vm.expectRevert("ERC4626Lib/min-shares-out-not-met");
-        vm.startPrank(relayer);
-        mainnetController.depositERC4626(address(SYRUP), 1_000_000e6, overBoundaryShares);
+        vm.expectRevert("ERC4626Facet/min-shares-out-not-met");
+        vm.startPrank(allocator);
+        mainnetController.erc4626_deposit(address(SYRUP), 1_000_000e6, overBoundaryShares);
 
-        mainnetController.depositERC4626(address(SYRUP), 1_000_000e6, atBoundaryShares);
+        mainnetController.erc4626_deposit(address(SYRUP), 1_000_000e6, atBoundaryShares);
     }
 
     function test_depositERC4626_maple() external {
@@ -179,8 +184,11 @@ contract MainnetController_ERC4626_Maple_Deposit_Tests is Maple_TestBase {
         assertEq(SYRUP.totalAssets(),                syrupTotalAssets);
         assertEq(SYRUP.balanceOf(address(almProxy)), 0);
 
-        vm.prank(relayer);
-        uint256 shares = mainnetController.depositERC4626(
+        vm.expectEmit(address(mainnetController));
+        emit IERC4626Facet.ERC4626Deposit(address(SYRUP), 1_000_000e6, syrupConvertedShares);
+
+        vm.prank(allocator);
+        uint256 shares = mainnetController.erc4626_deposit(
             address(SYRUP),
             1_000_000e6,
             syrupConvertedShares
@@ -206,16 +214,16 @@ contract MainnetController_Maple_RequestRedemption_Tests is Maple_TestBase {
     function test_requestMapleRedemption_reentrancy() external {
         _setControllerEntered();
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        mainnetController.requestMapleRedemption(address(SYRUP), 1_000_000e6);
+        mainnetController.maple_requestRedemption(address(SYRUP), 1_000_000e6);
     }
 
-    function test_requestMapleRedemption_notRelayer() external {
+    function test_requestMapleRedemption_notAllocator() external {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            ALLOCATOR_ROLE
         ));
-        mainnetController.requestMapleRedemption(address(SYRUP), 1_000_000e6);
+        mainnetController.maple_requestRedemption(address(SYRUP), 1_000_000e6);
     }
 
     function test_requestMapleRedemption_zeroMaxAmount() external {
@@ -223,8 +231,8 @@ contract MainnetController_Maple_RequestRedemption_Tests is Maple_TestBase {
         rateLimits.setRateLimitData(redeemKey, 0, 0);
 
         vm.expectRevert("RateLimits/zero-maxAmount");
-        vm.prank(relayer);
-        mainnetController.requestMapleRedemption(address(SYRUP), 1_000_000e6);
+        vm.prank(allocator);
+        mainnetController.maple_requestRedemption(address(SYRUP), 1_000_000e6);
     }
 
     function test_requestMapleRedemption_rateLimitBoundary() external {
@@ -233,8 +241,8 @@ contract MainnetController_Maple_RequestRedemption_Tests is Maple_TestBase {
 
         deal(Ethereum.USDC, address(almProxy), 5_000_000e6);
 
-        vm.prank(relayer);
-        mainnetController.depositERC4626(address(SYRUP), 5_000_000e6, 0);
+        vm.prank(allocator);
+        mainnetController.erc4626_deposit(address(SYRUP), 5_000_000e6, 0);
 
         uint256 overBoundaryShares = SYRUP.convertToShares(1_000_000e6 + 2);  // Rounding
         uint256 atBoundaryShares   = SYRUP.convertToShares(1_000_000e6 + 1);  // Rounding
@@ -243,18 +251,18 @@ contract MainnetController_Maple_RequestRedemption_Tests is Maple_TestBase {
         assertEq(SYRUP.convertToAssets(atBoundaryShares),   1_000_000e6);
 
         vm.expectRevert("RateLimits/rate-limit-exceeded");
-        vm.prank(relayer);
-        mainnetController.requestMapleRedemption(address(SYRUP), overBoundaryShares);
+        vm.prank(allocator);
+        mainnetController.maple_requestRedemption(address(SYRUP), overBoundaryShares);
 
-        vm.prank(relayer);
-        mainnetController.requestMapleRedemption(address(SYRUP), atBoundaryShares);
+        vm.prank(allocator);
+        mainnetController.maple_requestRedemption(address(SYRUP), atBoundaryShares);
     }
 
     function test_requestMapleRedemption() external {
         deal(Ethereum.USDC, address(almProxy), 1_000_000e6);
 
-        vm.prank(relayer);
-        uint256 proxyShares = mainnetController.depositERC4626(address(SYRUP), 1_000_000e6, 0);
+        vm.prank(allocator);
+        uint256 proxyShares = mainnetController.erc4626_deposit(address(SYRUP), 1_000_000e6, 0);
 
         address withdrawalManager   = IPoolManagerLike(SYRUP.manager()).withdrawalManager();
         uint256 totalEscrowedShares = SYRUP.balanceOf(withdrawalManager);
@@ -263,16 +271,23 @@ contract MainnetController_Maple_RequestRedemption_Tests is Maple_TestBase {
         assertEq(SYRUP.balanceOf(address(almProxy)),                    proxyShares);
         assertEq(SYRUP.allowance(address(almProxy), withdrawalManager), 0);
 
+        uint256 redeemRateLimitBefore = rateLimits.getCurrentRateLimit(redeemKey);
+        uint256 consumedAssets        = SYRUP.convertToAssets(proxyShares);
+
         vm.record();
 
-        vm.prank(relayer);
-        mainnetController.requestMapleRedemption(address(SYRUP), proxyShares);
+        vm.expectEmit(address(mainnetController));
+        emit IMapleFacet.MapleRequestRedemption(address(SYRUP), proxyShares);
+
+        vm.prank(allocator);
+        mainnetController.maple_requestRedemption(address(SYRUP), proxyShares);
 
         _assertReentrancyGuardWrittenToTwice();
 
         assertEq(SYRUP.balanceOf(withdrawalManager),                    totalEscrowedShares + proxyShares);
         assertEq(SYRUP.balanceOf(address(almProxy)),                    0);
         assertEq(SYRUP.allowance(address(almProxy), withdrawalManager), 0);
+        assertEq(rateLimits.getCurrentRateLimit(redeemKey),             redeemRateLimitBefore - consumedAssets);
     }
 }
 
@@ -281,22 +296,22 @@ contract MainnetController_Maple_CancelRedemption_Tests is Maple_TestBase {
     function test_cancelMapleRedemption_reentrancy() external {
         _setControllerEntered();
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        mainnetController.cancelMapleRedemption(address(SYRUP), 1_000_000e6);
+        mainnetController.maple_cancelRedemption(address(SYRUP), 1_000_000e6);
     }
 
-    function test_cancelMapleRedemption_notRelayer() external {
+    function test_cancelMapleRedemption_notAllocator() external {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            ALLOCATOR_ROLE
         ));
-        mainnetController.cancelMapleRedemption(address(SYRUP), 1_000_000e6);
+        mainnetController.maple_cancelRedemption(address(SYRUP), 1_000_000e6);
     }
 
     function test_cancelMapleRedemption_invalidMapleToken() external {
-        vm.expectRevert("MapleLib/invalid-action");
-        vm.prank(relayer);
-        mainnetController.cancelMapleRedemption(makeAddr("fake-SYRUP"), 1_000_000e6);
+        vm.expectRevert("MapleFacet/invalid-action");
+        vm.prank(allocator);
+        mainnetController.maple_cancelRedemption(makeAddr("fake-SYRUP"), 1_000_000e6);
     }
 
     function test_cancelMapleRedemption() external {
@@ -305,18 +320,27 @@ contract MainnetController_Maple_CancelRedemption_Tests is Maple_TestBase {
 
         deal(Ethereum.USDC, address(almProxy), 1_000_000e6);
 
-        vm.startPrank(relayer);
+        vm.startPrank(allocator);
 
-        uint256 proxyShares = mainnetController.depositERC4626(address(SYRUP), 1_000_000e6, 0);
+        uint256 proxyShares = mainnetController.erc4626_deposit(address(SYRUP), 1_000_000e6, 0);
 
-        mainnetController.requestMapleRedemption(address(SYRUP), proxyShares);
+        vm.expectEmit(address(mainnetController));
+        emit IMapleFacet.MapleRequestRedemption({
+            mapleToken : address(SYRUP),
+            shares     : proxyShares
+        });
+
+        mainnetController.maple_requestRedemption(address(SYRUP), proxyShares);
 
         assertEq(SYRUP.balanceOf(withdrawalManager), totalEscrowedShares + proxyShares);
         assertEq(SYRUP.balanceOf(address(almProxy)), 0);
 
         vm.record();
 
-        mainnetController.cancelMapleRedemption(address(SYRUP), proxyShares);
+        vm.expectEmit(address(mainnetController));
+        emit IMapleFacet.MapleCancelRedemption(address(SYRUP), proxyShares);
+
+        mainnetController.maple_cancelRedemption(address(SYRUP), proxyShares);
 
         _assertReentrancyGuardWrittenToTwice();
 
@@ -349,8 +373,8 @@ contract MainnetController_Maple_E2ETests is Maple_TestBase {
         assertEq(SYRUP.totalAssets(),                syrupTotalAssets);
         assertEq(SYRUP.balanceOf(address(almProxy)), 0);
 
-        vm.prank(relayer);
-        uint256 proxyShares = mainnetController.depositERC4626(address(SYRUP), 1_000_000e6, 0);
+        vm.prank(allocator);
+        uint256 proxyShares = mainnetController.erc4626_deposit(address(SYRUP), 1_000_000e6, 0);
 
         assertEq(proxyShares, syrupConvertedShares);
 
@@ -375,8 +399,8 @@ contract MainnetController_Maple_E2ETests is Maple_TestBase {
         assertEq(SYRUP.balanceOf(address(almProxy)),                    proxyShares);
         assertEq(SYRUP.allowance(address(almProxy), withdrawalManager), 0);
 
-        vm.prank(relayer);
-        mainnetController.requestMapleRedemption(address(SYRUP), proxyShares);
+        vm.prank(allocator);
+        mainnetController.maple_requestRedemption(address(SYRUP), proxyShares);
 
         assertEq(SYRUP.balanceOf(withdrawalManager),                    totalEscrowedShares + proxyShares);
         assertEq(SYRUP.balanceOf(address(almProxy)),                    0);

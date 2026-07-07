@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity ^0.8.21;
+pragma solidity ^0.8.34;
 
 import { AccessControl } from "../lib/openzeppelin-contracts/contracts/access/AccessControl.sol";
 import { Address }       from "../lib/openzeppelin-contracts/contracts/utils/Address.sol";
@@ -11,24 +11,26 @@ contract ALMProxy is IALMProxy, AccessControl {
     using Address for address;
 
     /**********************************************************************************************/
-    /*** State variables                                                                        ***/
+    /*** Constants                                                                              ***/
     /**********************************************************************************************/
 
-    bytes32 public override constant CONTROLLER = keccak256("CONTROLLER");
+    bytes32 public constant override CONTROLLER = keccak256("CONTROLLER");
 
     /**********************************************************************************************/
-    /*** Initialization                                                                         ***/
+    /*** Constructor                                                                            ***/
     /**********************************************************************************************/
 
     constructor(address admin) {
+        require(admin != address(0), ZeroAdmin());
+
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }
 
     /**********************************************************************************************/
-    /*** Call functions                                                                         ***/
+    /*** External Interactive Controller Functions                                              ***/
     /**********************************************************************************************/
 
-    function doCall(address target, bytes memory data)
+    function doCall(address target, bytes calldata data)
         external
         override
         onlyRole(CONTROLLER)
@@ -37,7 +39,7 @@ contract ALMProxy is IALMProxy, AccessControl {
         result = target.functionCall(data);
     }
 
-    function doCallWithValue(address target, bytes memory data, uint256 value)
+    function doCallWithValue(address target, bytes calldata data, uint256 value)
         external
         payable
         override
@@ -47,7 +49,7 @@ contract ALMProxy is IALMProxy, AccessControl {
         result = target.functionCallWithValue(data, value);
     }
 
-    function doDelegateCall(address target, bytes memory data)
+    function doDelegateCall(address target, bytes calldata data)
         external
         override
         onlyRole(CONTROLLER)
@@ -60,6 +62,6 @@ contract ALMProxy is IALMProxy, AccessControl {
     /*** Receive function                                                                       ***/
     /**********************************************************************************************/
 
-    receive() external payable { }
+    receive() external payable {}
 
 }

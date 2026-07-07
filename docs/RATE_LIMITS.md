@@ -1,20 +1,21 @@
 # Rate Limits
 
-This document describes the rate limiting system used in Diamond PAU.
+This document describes the rate limiting system used in PAU.
 
 ## Overview
 
-The `RateLimits` contract enforces rate limits on the controller contracts. Rate limits are keyed by individual `bytes32` hashes derived from a `bytes32` identifier unique to the integration and function, and optionally some data unique to the recipient, assets, pool, etc to apply the rate limit to. This design allows flexibility in future function signatures while maintaining the same high-level functionality.
+The `RateLimits` contract enforces rate limits on the Controller. Rate limits are keyed by individual `bytes32` hashes derived from a `bytes32` identifier unique to the integration and function, and optionally some data unique to the recipient, assets, pool, etc to apply the rate limit to. This design allows flexibility in future function signatures while maintaining the same high-level functionality.
+
+Depending on deployment topology, one `RateLimits` contract can be used by a single `Controller` or shared by multiple controllers that direct the same `ALMProxy`.
 
 ### Whitelisting via Rate Limit Keys
 
 Rate limit keys are constructed by hashing together a **function identifier** and an **address or ID** (e.g., pool address, vault address, token address). This mechanism serves as an implicit **whitelist/onboarding system**:
 
 - **Examples:**
-  - Depositing liquidity to a specific Uniswap V4 pool requires the rate limit key `keccak256(abi.encode(LIMIT_UNISWAP_V4_DEPOSIT, poolId))` to be set
-  - Withdrawing an aToken from Aave requires the rate limit key `keccak256(abi.encode(LIMIT_AAVE_WITHDRAW, aToken))` to be set
-  - Preparing a USDe burn requires the rate limit key `LIMIT_SUSDE_COOLDOWN` to be set
-- **Security benefit:** Prevents relayers from interacting with arbitrary/malicious contracts - only governance-approved integrations have valid rate limit keys
+    - Depositing liquidity to a specific Uniswap V4 pool requires the rate limit keys `keccak256(abi.encode(LIMIT_UNISWAP_V4_DEPOSIT, poolId))` and `keccak256(abi.encode(LIMIT_UNISWAP_V4_DEPOSIT, token, poolId))` to be set
+    - Withdrawing an aToken from Aave requires the rate limit key `keccak256(abi.encode(LIMIT_AAVE_WITHDRAW, pool, aToken))` to be set
+- **Security benefit:** Prevents allocators from interacting with arbitrary/malicious contracts - only governance-approved integrations have valid rate limit keys
 - **Operational benefit:** New integrations can be onboarded with lower rate limits to ease into use, and then increased to manage ongoing risk/exposure, and providing a clear audit trail
 
 See `RateLimitHelpers.sol` for the key generation utilities (e.g., `makeAddressKey`).
@@ -23,12 +24,12 @@ See `RateLimitHelpers.sol` for the key generation utilities (e.g., `makeAddressK
 
 Rate limits are stored in a mapping with the `keccak256` hash as the key and a struct containing:
 
-| Field | Description |
-|-------|-------------|
-| `maxAmount` | Maximum allowed amount at any time |
-| `slope` | Rate at which the limit increases [tokens / second] |
-| `lastAmount` | Amount left available at the last update |
-| `lastUpdated` | Timestamp when the rate limit was last updated |
+| Field         | Description                                         |
+| ------------- | --------------------------------------------------- |
+| `maxAmount`   | Maximum allowed amount at any time                  |
+| `slope`       | Rate at which the limit increases [tokens / second] |
+| `lastAmount`  | Amount left available at the last update            |
+| `lastUpdated` | Timestamp when the rate limit was last updated      |
 
 ## Rate Limit Calculation
 
@@ -43,12 +44,26 @@ This is a **linear rate limit** that increases over time with a maximum limit.
 ### Update Mechanism
 
 Rate limit values can be:
+
 - **Set by an admin** - Direct configuration
 - **Updated by the `CONTROLLER` role** - Automatic adjustment based on operations
 
 For example, after minting USDS:
+
 - `lastAmount` is decremented by the minted amount
 - `lastUpdated` is set to `block.timestamp`
+
+Note that setting the rate limit data creates a boundary where the remaining rate limit can be consumed right before it is set, after which it will be reset, which is similar to the ERC20 approval race condition.
+
+### Events
+
+`RateLimits` emits the following events (declared in `IRateLimits`):
+
+| Event                        | Emitted When                                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------------ |
+| `RateLimitDataSet`           | Admin sets the rate limit data for a key (max amount, slope, last amount, last updated).   |
+| `RateLimitDecreaseTriggered` | The `CONTROLLER` triggers a decrease for a key after an operation consumes the rate limit. |
+| `RateLimitIncreaseTriggered` | The `CONTROLLER` triggers an increase for a key (e.g., on cancellation paths or refunds).  |
 
 ---
 
@@ -58,10 +73,10 @@ For example, after minting USDS:
 
 **Implementation:** Rate limits are only normalized to 18 decimals in multi-asset scenarios.
 
-| Scenario | Behavior |
-|----------|----------|
+| Scenario                    | Behavior                                                                 |
+| --------------------------- | ------------------------------------------------------------------------ |
 | **Single-asset operations** | Rate limits tracked in native token decimals (e.g., 6 decimals for USDC) |
-| **Multi-asset operations** | Values normalized to 18 decimals for consistent comparison |
+| **Multi-asset operations**  | Values normalized to 18 decimals for consistent comparison               |
 
 **Rationale:** This approach minimizes unnecessary decimal conversions and potential precision loss in single-asset scenarios while maintaining accuracy when cross-asset comparisons are needed.
 
@@ -71,25 +86,26 @@ For example, after minting USDS:
 
 **Decision:** Rate limits **are** cancelled in the Mainnet PSM integration.
 
-| Operation | Rate Limit Behavior |
-|-----------|---------------------|
-| `swapUSDSToUSDC` | Decreases rate limit |
-| `swapUSDCToUSDS` | **Cancels** (increases) rate limit |
+| Operation        | Rate Limit Behavior                                                                       |
+| ---------------- | ----------------------------------------------------------------------------------------- |
+| `swapUSDSToUSDC` | Decreases `usdsToUSDCSwapRateLimit`                                                       |
+| `swapUSDCToUSDS` | **Cancels** (increases) `usdsToUSDCSwapRateLimit` and decreases `usdcToUSDSSwapRateLimit` |
 
-**Rationale:** Swapping USDC back to USDS effectively returns value to the system, so the rate limit is restored.
+**Rationale:** Swapping USDC back to USDS effectively returns value to the system, so the `usdsToUSDCSwapRateLimit` is restored.
 
 #### PSM3 Integration (No Cancellation, No minShares)
 
-**Decision:** Rate limits are **not** cancelled in the PSM3 integration (ForeignController).
+**Decision:** Rate limits are **not** cancelled in the PSM3 integration (PSM3Facet).
 
-| Operation | Rate Limit Behavior |
-|-----------|---------------------|
-| `depositPSM` | Decreases rate limit |
-| `withdrawPSM` | Decreases rate limit (no cancellation) |
+| Operation  | Rate Limit Behavior                    |
+| ---------- | -------------------------------------- |
+| `deposit`  | Decreases rate limit                   |
+| `withdraw` | Decreases rate limit (no cancellation) |
 
 **Additional Decision:** `minShares` parameter is not added to PSM3 operations.
 
 **Rationale:**
+
 - The PSM3 integration will be deprecated soon, making additional safety mechanisms a poor investment of development resources
 - The PSM3 contract is immutable, limiting the attack surface
 - Prices cannot be manipulated in PSM3 due to its design (1:1 swap mechanism)
@@ -100,51 +116,23 @@ For example, after minting USDS:
 **Decision:** Maple cancel redemption requests and deposits are **not** rate-limit cancelled.
 
 **Rationale:**
+
 - Maple pools are permissioned environments
 - Pool dynamics are slower-moving compared to DEX liquidity
 - Lower risk of rapid value extraction
 
----
+## Gate-Check Pattern
 
-## Rate Limit Uses
+Some operations verify a rate limit is configured (`maxAmount > 0`) without decreasing it. This serves as an implicit whitelist: if the rate limit key was never set by governance, the operation reverts. Examples:
 
-The current uses of rate limits can be seen in [`./printers/rate_limits.py`](../printers/rate_limits.py) (for both the Foreign and Mainnet controllers). The file is also an executable [Wake](https://github.com/Ackee-Blockchain/wake) printer, which can verify that the information in the file is correct at any time.
+- `WSTETHFacet.claimWithdrawal`: checks `LIMIT_WSTETH_CLAIM_WITHDRAW.maxAmount > 0`
+- `WEETHFacet.claimWithdrawal`: checks `makeAddressKey(LIMIT_WEETH_CLAIM_WITHDRAW, weethModule).maxAmount > 0`
 
-### Running the Rate Limits Printer
+The claim path is gated by a dedicated claim-side key. Configuring only `LIMIT_WSTETH_REQUEST_WITHDRAW` / `LIMIT_WEETH_REQUEST_WITHDRAW` is not sufficient. The `requestWithdraw` will succeed and queue shares with Lido/EtherFi, but `claimWithdrawal` will later revert with `WSTETHFacet/invalid-action` or `WEETHFacet/invalid-action` until the claim key is added.
 
-Install Wake using one of:
+### Try-Increase (Not Gate-Check)
 
-```bash
-uv tool install eth-wake
-pipx install eth-wake
-pip install eth-wake
-```
-
-Execute the printer:
-
-```bash
-❯ wake --config printers/wake.toml print rate-limits
-[14:16:59] Found 16 *.sol files in 0.51 s                                                 print.py:466
-           Loaded previous build in 0.47 s                                             compiler.py:862
-           Compiled 0 files using 0 solc runs in 0.00 s                               compiler.py:1242
-           Processed compilation results in 0.01 s                                    compiler.py:1495
-📦 Checking MainnetController...
-✅ Successfully checked MainnetController...
-📦 Checking ForeignController...
-✅ Successfully checked ForeignController...
-```
-
-A zero exit-code indicates the spec is satisfied.
-
-### Regenerating Wake Config
-
-If `printers/wake.toml` goes out of sync, regenerate it:
-
-```bash
-wake up config
-```
-
-This reads Foundry remappings and creates a new `wake.toml` file (which can then be moved to `/printers`).
+`AaveFacet.withdraw`, `ERC4626Facet.withdraw`, `ERC4626Facet.redeem`, `PSMFacet.swapUSDCToUSDS`, and `USDSFacet.burn` use `_tryIncreaseRateLimit` on the deposit key, which silently no-ops when the deposit key's `maxAmount == 0`. These withdraw paths are gated only by their respective withdraw key (via `_decreaseRateLimit`, which reverts when unset). The deposit key is opportunistically restored when configured and is not a precondition for withdrawal. Setting the deposit key's `maxAmount` to zero does not pause the corresponding withdraw path.
 
 ---
 
@@ -153,4 +141,4 @@ This reads Foundry remappings and creates a new `wake.toml` file (which can then
 Rate limits must take into account:
 
 1. **Risk tolerance** for a given protocol
-2. **Griefing attacks** (e.g., repetitive transactions with high slippage by malicious relayer)
+2. **Griefing attacks** (e.g., repetitive transactions with high slippage by malicious allocator)

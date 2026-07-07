@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity ^0.8.21;
+pragma solidity ^0.8.34;
 
 import { ERC20 } from "../../lib/openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 
@@ -18,6 +18,26 @@ contract MockTokenReturnFalse is ERC20 {
         _spendAllowance(from, _msgSender(), value);
         _transfer(from, to, value);
         return false;
+    }
+
+}
+
+contract MockTokenReturn64Bytes {
+
+    function decimals() external pure returns (uint8) {
+        return 18;
+    }
+
+    function balanceOf(address) external pure returns (uint256) {
+        return 1_000_000e18;
+    }
+
+    function transfer(address, uint256) external pure returns (bool, bool) {
+        return (true, true);
+    }
+
+    function transferFrom(address, address, uint256) external pure returns (bool, bool) {
+        return (true, true);
     }
 
 }

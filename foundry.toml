@@ -3,9 +3,9 @@ src = "src"
 out = "out"
 script = "script"
 libs = ["lib"]
-solc_version = '0.8.25'
+solc_version = '0.8.34'
 optimizer = true
-optimizer_runs = 1
+optimizer_runs = 200
 fs_permissions = [
     { access = "read", path = "./script/input/"},
     { access = "read-write", path = "./script/output/"}
@@ -17,6 +17,9 @@ remappings = [
     '@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/',
     'solidity-bytes-utils/=lib/solidity-bytes-utils/'
 ]
+
+[lint]
+lint_on_build = false
 
 [fuzz]
 runs = 1000

@@ -1,20 +1,30 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity ^0.8.21;
+pragma solidity ^0.8.34;
 
 import {
     IAccessControl
 } from "../../lib/openzeppelin-contracts/contracts/access/IAccessControl.sol";
 
+/**
+ * @title  IALMProxy
+ * @notice Proxy contract that executes calls, value calls, and delegate calls on behalf of the
+ *         PAU system. Only accounts with the CONTROLLER role can invoke its functions.
+ */
 interface IALMProxy is IAccessControl {
 
-    /**
-     * @dev    This function retrieves a constant `bytes32` value that represents the controller.
-     * @return The `bytes32` identifier of the controller.
-     */
-    function CONTROLLER() external view returns (bytes32);
+    /**********************************************************************************************/
+    /*** Custom Errors                                                                          ***/
+    /**********************************************************************************************/
+
+    /// @notice Thrown when the admin is the zero address.
+    error ZeroAdmin();
+
+    /**********************************************************************************************/
+    /*** Interactive Functions                                                                  ***/
+    /**********************************************************************************************/
 
     /**
-     * @dev    Performs a standard call to the specified `target` with the given `data`.
+     * @notice Performs a standard call to the specified `target` with the given `data`.
      *         Reverts if the call fails.
      * @param  target The address of the target contract to call.
      * @param  data   The calldata that will be sent to the target contract.
@@ -23,20 +33,20 @@ interface IALMProxy is IAccessControl {
     function doCall(address target, bytes calldata data) external returns (bytes memory result);
 
     /**
-     * @dev    This function allows for transferring `value` (ether) along with the call to the
+     * @notice This function allows for transferring `value` (ether) along with the call to the
      *         target contract. Reverts if the call fails.
      * @param  target The address of the target contract to call.
      * @param  data   The calldata that will be sent to the target contract.
      * @param  value  The amount of Ether (in wei) to send with the call.
      * @return result The returned data from the call.
      */
-    function doCallWithValue(address target, bytes memory data, uint256 value)
+    function doCallWithValue(address target, bytes calldata data, uint256 value)
         external
         payable
         returns (bytes memory result);
 
     /**
-     * @dev    This function performs a delegate call to the specified `target` with the given
+     * @notice This function performs a delegate call to the specified `target` with the given
      *         `data`. Reverts if the call fails.
      * @param  target The address of the target contract to delegate call.
      * @param  data   The calldata that will be sent to the target contract.
@@ -45,5 +55,15 @@ interface IALMProxy is IAccessControl {
     function doDelegateCall(address target, bytes calldata data)
         external
         returns (bytes memory result);
+
+    /**********************************************************************************************/
+    /*** Variables                                                                              ***/
+    /**********************************************************************************************/
+
+    /**
+     * @notice This function retrieves a constant `bytes32` value that represents the controller.
+     * @return The `bytes32` identifier of the controller.
+     */
+    function CONTROLLER() external view returns (bytes32);
 
 }

@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity ^0.8.21;
+pragma solidity ^0.8.34;
 
 import { ReentrancyGuard } from "../../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
 import { Ethereum } from "../../lib/spark-address-registry/src/Ethereum.sol";
 
-import { makeAddressAddressKey } from "../../src/RateLimitHelpers.sol";
+import { ITransferAssetFacet } from "../../src/facets/transfer-asset/ITransferAssetFacet.sol";
 
-import { MockTokenReturnFalse } from "../mocks/Mocks.sol";
+import { MockTokenReturnFalse, MockTokenReturn64Bytes } from "../mocks/Mocks.sol";
 
 import { ForkTestBase } from "./ForkTestBase.t.sol";
 
@@ -29,11 +29,7 @@ abstract contract TransferAsset_TestBase is ForkTestBase {
         vm.startPrank(Ethereum.SPARK_PROXY);
 
         rateLimits.setRateLimitData(
-            makeAddressAddressKey(
-                mainnetController.LIMIT_ASSET_TRANSFER(),
-                Ethereum.USDC,
-                receiver
-            ),
+            mainnetController.transferAsset_getTransferRateLimitKey(Ethereum.USDC, receiver),
             1_000_000e6,
             uint256(1_000_000e6) / 1 days
         );
@@ -48,33 +44,33 @@ contract MainnetController_TransferAsset_Tests is TransferAsset_TestBase {
     function test_transferAsset_reentrancy() external {
         _setControllerEntered();
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        mainnetController.transferAsset(Ethereum.USDC, receiver, 1_000_000e6);
+        mainnetController.transferAsset_transfer(Ethereum.USDC, receiver, 1_000_000e6);
     }
 
-    function test_transferAsset_notRelayer() external {
+    function test_transferAsset_notAllocator() external {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            ALLOCATOR_ROLE
         ));
-        mainnetController.transferAsset(Ethereum.USDC, receiver, 1_000_000e6);
+        mainnetController.transferAsset_transfer(Ethereum.USDC, receiver, 1_000_000e6);
     }
 
     function test_transferAsset_zeroMaxAmount() external {
         vm.expectRevert("RateLimits/zero-maxAmount");
-        vm.prank(relayer);
-        mainnetController.transferAsset(makeAddr("fake-token"), receiver, 1e18);
+        vm.prank(allocator);
+        mainnetController.transferAsset_transfer(makeAddr("fake-token"), receiver, 1e18);
     }
 
     function test_transferAsset_rateLimitedBoundary() external {
         deal(Ethereum.USDC, address(almProxy), 1_000_000e6 + 1);
 
         vm.expectRevert("RateLimits/rate-limit-exceeded");
-        vm.prank(relayer);
-        mainnetController.transferAsset(Ethereum.USDC, receiver, 1_000_000e6 + 1);
+        vm.prank(allocator);
+        mainnetController.transferAsset_transfer(Ethereum.USDC, receiver, 1_000_000e6 + 1);
 
-        vm.prank(relayer);
-        mainnetController.transferAsset(Ethereum.USDC, receiver, 1_000_000e6);
+        vm.prank(allocator);
+        mainnetController.transferAsset_transfer(Ethereum.USDC, receiver, 1_000_000e6);
     }
 
     function test_transferAsset_transferFailedOnReturnFalse() external {
@@ -83,11 +79,7 @@ contract MainnetController_TransferAsset_Tests is TransferAsset_TestBase {
         vm.startPrank(Ethereum.SPARK_PROXY);
 
         rateLimits.setRateLimitData(
-            makeAddressAddressKey(
-                mainnetController.LIMIT_ASSET_TRANSFER(),
-                address(token),
-                receiver
-            ),
+            mainnetController.transferAsset_getTransferRateLimitKey(address(token), receiver),
             1_000_000e18,
             uint256(1_000_000e18) / 1 days
         );
@@ -96,9 +88,22 @@ contract MainnetController_TransferAsset_Tests is TransferAsset_TestBase {
 
         deal(address(token), address(almProxy), 1_000_000e18);
 
-        vm.expectRevert("TransferAssetLib/transfer-failed");
-        vm.prank(relayer);
-        mainnetController.transferAsset(address(token), receiver, 1_000_000e18);
+        vm.expectRevert("TransferAssetFacet/transfer-failed");
+        vm.prank(allocator);
+        mainnetController.transferAsset_transfer(address(token), receiver, 1_000_000e18);
+    }
+
+    function test_transferAsset_transferFailedOnNonStandardReturnData() external {
+        MockTokenReturn64Bytes token = new MockTokenReturn64Bytes();
+
+        bytes32 key = mainnetController.transferAsset_getTransferRateLimitKey(address(token), receiver);
+
+        vm.prank(Ethereum.SPARK_PROXY);
+        rateLimits.setRateLimitData(key, 1_000_000e18, uint256(1_000_000e18) / 1 days);
+
+        vm.expectRevert("TransferAssetFacet/transfer-failed");
+        vm.prank(allocator);
+        mainnetController.transferAsset_transfer(address(token), receiver, 1_000_000e18);
     }
 
     function test_transferAsset() external {
@@ -109,8 +114,11 @@ contract MainnetController_TransferAsset_Tests is TransferAsset_TestBase {
 
         vm.record();
 
-        vm.prank(relayer);
-        mainnetController.transferAsset(Ethereum.USDC, receiver, 1_000_000e6);
+        vm.expectEmit(address(mainnetController));
+        emit ITransferAssetFacet.TransferAssetTransfer(Ethereum.USDC, receiver, 1_000_000e6);
+
+        vm.prank(allocator);
+        mainnetController.transferAsset_transfer(Ethereum.USDC, receiver, 1_000_000e6);
 
         _assertReentrancyGuardWrittenToTwice();
 
@@ -122,11 +130,7 @@ contract MainnetController_TransferAsset_Tests is TransferAsset_TestBase {
         vm.startPrank(Ethereum.SPARK_PROXY);
 
         rateLimits.setRateLimitData(
-            makeAddressAddressKey(
-                mainnetController.LIMIT_ASSET_TRANSFER(),
-                Ethereum.USDT,
-                receiver
-            ),
+            mainnetController.transferAsset_getTransferRateLimitKey(Ethereum.USDT, receiver),
             1_000_000e6,
             uint256(1_000_000e6) / 1 days
         );
@@ -138,8 +142,11 @@ contract MainnetController_TransferAsset_Tests is TransferAsset_TestBase {
         assertEq(USDT.balanceOf(receiver),          0);
         assertEq(USDT.balanceOf(address(almProxy)), 1_000_000e6);
 
-        vm.prank(relayer);
-        mainnetController.transferAsset(Ethereum.USDT, receiver, 1_000_000e6);
+        vm.expectEmit(address(mainnetController));
+        emit ITransferAssetFacet.TransferAssetTransfer(Ethereum.USDT, receiver, 1_000_000e6);
+
+        vm.prank(allocator);
+        mainnetController.transferAsset_transfer(Ethereum.USDT, receiver, 1_000_000e6);
 
         assertEq(USDT.balanceOf(receiver),          1_000_000e6);
         assertEq(USDT.balanceOf(address(almProxy)), 0);

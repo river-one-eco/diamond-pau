@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity ^0.8.21;
+pragma solidity ^0.8.34;
 
-import "../../lib/forge-std/src/Test.sol";
+import { Test } from "../../lib/forge-std/src/Test.sol";
 
 import { IERC20 } from "../../lib/forge-std/src/interfaces/IERC20.sol";
 
@@ -12,18 +12,23 @@ import { Avalanche } from "../../lib/grove-address-registry/src/Avalanche.sol";
 import { PSM3Deploy } from "../../lib/spark-psm/deploy/PSM3Deploy.sol";
 import { IPSM3 }      from "../../lib/spark-psm/src/PSM3.sol";
 
-import { CCTPv2Forwarder as CCTPForwarder } from "../../lib/grove-xchain-helpers/src/forwarders/CCTPv2Forwarder.sol";
+import { IFacet } from "../../src/facets/IFacet.sol";
 
-import { ForeignControllerDeploy } from "../../deploy/ControllerDeploy.sol";
-import { ControllerInstance }      from "../../deploy/ControllerInstance.sol";
+import { ICentrifugeFacet } from "../../src/facets/centrifuge/ICentrifugeFacet.sol";
+import { IERC7540Facet }    from "../../src/facets/erc7540/IERC7540Facet.sol";
 
-import { ForeignControllerInit as Init } from "../../deploy/ForeignControllerInit.sol";
+import { CentrifugeFacet } from "../../src/facets/centrifuge/CentrifugeFacet.sol";
+import { ERC7540Facet }    from "../../src/facets/erc7540/ERC7540Facet.sol";
 
-import { ALMProxy }          from "../../src/ALMProxy.sol";
-import { ForeignController } from "../../src/ForeignController.sol";
-import { RateLimits }        from "../../src/RateLimits.sol";
+import { IAccessControls }         from "../../src/interfaces/IAccessControls.sol";
+import { IALMProxy }               from "../../src/interfaces/IALMProxy.sol";
+import { IEnumerableIntegrations } from "../../src/interfaces/IEnumerableIntegrations.sol";
+import { IRateLimits }             from "../../src/interfaces/IRateLimits.sol";
 
-import { RateLimitHelpers } from "../../src/RateLimitHelpers.sol";
+import { Beacon }     from "../../src/Beacon.sol";
+import { PAUFactory } from "../../src/PAUFactory.sol";
+
+import { IForeignControllerFull } from "../interfaces/IForeignControllerFull.sol";
 
 contract MockSSROracle {
 
@@ -35,25 +40,28 @@ contract MockSSROracle {
 
 contract ForkTestBase is Test {
 
+    struct MintRecipient {
+        uint32  domain;
+        bytes32 mintRecipient;
+    }
+
     /**********************************************************************************************/
     /*** Constants/state variables                                                              ***/
     /**********************************************************************************************/
 
-    bytes32 constant DEFAULT_ADMIN_ROLE = 0x00;
+    bytes32 constant ALLOCATOR_ROLE       = keccak256("ALLOCATOR_ROLE");
+    bytes32 constant ALLOCATOR_ADMIN_ROLE = keccak256("ALLOCATOR_ADMIN_ROLE");
+    bytes32 constant DEFAULT_ADMIN_ROLE   = 0x00;
 
-    bytes32 CONTROLLER;
-    bytes32 FREEZER;
-    bytes32 RELAYER;
-
-    address pocket = makeAddr("pocket");
+    address pocket   = makeAddr("pocket");
+    address skyAdmin = makeAddr("skyAdmin");
 
     /**********************************************************************************************/
-    /*** Avalanche addresses                                                                   ***/
+    /*** Avalanche addresses                                                                    ***/
     /**********************************************************************************************/
 
-    address constant ALM_FREEZER                 = Avalanche.ALM_FREEZER;
-    address constant ALM_RELAYER                 = Avalanche.ALM_RELAYER;
-    address constant CCTP_TOKEN_MESSENGER        = Avalanche.CCTP_TOKEN_MESSENGER_V2;
+    address constant ALLOCATOR                   = Avalanche.ALM_RELAYER;
+    address constant ALLOCATOR_ADMIN             = Avalanche.ALM_FREEZER;
     address constant GROVE_EXECUTOR              = Avalanche.GROVE_EXECUTOR;
     address constant USDC_AVALANCHE              = Avalanche.USDC;
     address constant UNISWAP_V3_ROUTER           = 0xbb00FF08d01D300023C629E8fFfFcb65A5a578cE;
@@ -63,9 +71,12 @@ contract ForkTestBase is Test {
     /*** ALM system deployments                                                                 ***/
     /**********************************************************************************************/
 
-    ALMProxy          almProxy;
-    RateLimits        rateLimits;
-    ForeignController foreignController;
+    Beacon                 beacon;
+    IAccessControls        accessControls;
+    IALMProxy              almProxy;
+    IForeignControllerFull foreignController;
+    IRateLimits            rateLimits;
+    PAUFactory             factory;
 
     /**********************************************************************************************/
     /*** Addresses for testing                                                                  ***/
@@ -110,70 +121,204 @@ contract ForkTestBase is Test {
 
         /*** Step 3: Deploy ALM system ***/
 
-        ControllerInstance memory controllerInst = ForeignControllerDeploy.deployFull({
-            admin : GROVE_EXECUTOR,
-            psm   : address(psmAvalanche),
-            usdc  : USDC_AVALANCHE,
-            cctp  : CCTP_TOKEN_MESSENGER
-        });
+        beacon  = new Beacon(skyAdmin);
+        factory = new PAUFactory(address(beacon));
 
-        almProxy          = ALMProxy(payable(controllerInst.almProxy));
-        rateLimits        = RateLimits(controllerInst.rateLimits);
-        foreignController = ForeignController(controllerInst.controller);
+        rateLimits     = IRateLimits(factory.deployRateLimits(GROVE_EXECUTOR));
+        accessControls = IAccessControls(factory.deployAccessControls(GROVE_EXECUTOR));
+        almProxy       = IALMProxy(factory.deployALMProxy(GROVE_EXECUTOR));
 
-        CONTROLLER = almProxy.CONTROLLER();
-        FREEZER    = foreignController.FREEZER();
-        RELAYER    = foreignController.RELAYER();
-
-        /*** Step 3: Configure ALM system through Grove governance (Grove spell payload) ***/
-
-        address[] memory relayers = new address[](1);
-        relayers[0] = ALM_RELAYER;
-
-        Init.ConfigAddressParams memory configAddresses = Init.ConfigAddressParams({
-            freezer       : ALM_FREEZER,
-            relayers      : relayers,
-            oldController : address(0)
-        });
-
-        Init.CheckAddressParams memory checkAddresses = Init.CheckAddressParams({
-            admin : GROVE_EXECUTOR,
-            psm   : address(psmAvalanche),
-            cctp  : CCTP_TOKEN_MESSENGER,
-            usdc  : USDC_AVALANCHE,
-            susds : address(susdsAvalanche),
-            usds  : address(usdsAvalanche)
-        });
-
-        Init.MintRecipient[] memory mintRecipients = new Init.MintRecipient[](1);
-
-        mintRecipients[0] = Init.MintRecipient({
-            domain        : CCTPForwarder.DOMAIN_ID_CIRCLE_ETHEREUM,
-            mintRecipient : bytes32(uint256(uint160(makeAddr("ethereumAlmProxy"))))
-        });
-
-        Init.LayerZeroRecipient[] memory layerZeroRecipients = new Init.LayerZeroRecipient[](0);
-
-        Init.MaxSlippageParams[] memory maxSlippageParams = new Init.MaxSlippageParams[](0);
+        foreignController = IForeignControllerFull(
+            payable(factory.deployController(address(accessControls), address(almProxy), address(rateLimits)))
+        );
 
         vm.startPrank(GROVE_EXECUTOR);
 
-        Init.initAlmSystem(
-            controllerInst,
-            configAddresses,
-            checkAddresses,
-            mintRecipients,
-            layerZeroRecipients,
-            maxSlippageParams,
-            true
-        );
+        almProxy.grantRole(almProxy.CONTROLLER(),     address(foreignController));
+        rateLimits.grantRole(rateLimits.CONTROLLER(), address(foreignController));
+
+        vm.stopPrank();
+
+        vm.startPrank(skyAdmin);
+
+        // Facet wiring
+        _wireCentrifugeFacet();
+        _wireERC7540Facet();
+
+        vm.stopPrank();
+
+        vm.startPrank(GROVE_EXECUTOR);
+
+        accessControls.grantRole(ALLOCATOR_ROLE,       ALLOCATOR);
+        accessControls.grantRole(ALLOCATOR_ADMIN_ROLE, ALLOCATOR_ADMIN);
+
+        // NOTE: In practice the ALLOCATOR_ADMIN_ROLE will be a wrapper module with custom role
+        //       logic that calls into AccessControls to perform grants and revocations.
+        accessControls.setRoleAdmin(ALLOCATOR_ROLE, ALLOCATOR_ADMIN_ROLE);
+
+        bytes32[] memory integrationIds = new bytes32[](2);
+        integrationIds[0] = "CENTRIFUGE_FACET";
+        integrationIds[1] = "ERC7540_FACET";
+
+        foreignController.updateIntegrations(integrationIds);
 
         vm.stopPrank();
     }
 
     // Default configuration for the fork, can be overridden in inheriting tests
-    function _getBlock() internal virtual pure returns (uint256) {
+    function _getBlock() internal pure virtual returns (uint256) {
         return 65896755;  // July 22, 2025
+    }
+
+    /**********************************************************************************************/
+    /*** Facet wiring helpers                                                                   ***/
+    /**********************************************************************************************/
+
+    function _wireCentrifugeFacet() internal {
+        // NOTE: We are NOT wiring DEPOSIT, REDEEM keys, as they already wired in _wireERC7540Facet.
+
+        address centrifugeFacet = address(new CentrifugeFacet());
+
+        vm.label(centrifugeFacet, "CentrifugeFacet");
+
+        IEnumerableIntegrations.Wire[] memory wires = new IEnumerableIntegrations.Wire[](14);
+
+        wires[0] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.centrifuge_setRecipient.selector,
+            ICentrifugeFacet.setRecipient.selector
+        );
+
+        wires[1] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.centrifuge_cancelDepositRequest.selector,
+            ICentrifugeFacet.cancelDepositRequest.selector
+        );
+
+        wires[2] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.centrifuge_claimCancelDepositRequest.selector,
+            ICentrifugeFacet.claimCancelDepositRequest.selector
+        );
+
+        wires[3] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.centrifuge_cancelRedeemRequest.selector,
+            ICentrifugeFacet.cancelRedeemRequest.selector
+        );
+
+        wires[4] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.centrifuge_claimCancelRedeemRequest.selector,
+            ICentrifugeFacet.claimCancelRedeemRequest.selector
+        );
+
+        wires[5] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.centrifuge_transferShares.selector,
+            ICentrifugeFacet.transferShares.selector
+        );
+
+        wires[6] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.centrifuge_getRecipient.selector,
+            ICentrifugeFacet.getRecipient.selector
+        );
+
+        wires[7] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.centrifuge_getCancelDepositRateLimitKey.selector,
+            ICentrifugeFacet.getCancelDepositRateLimitKey.selector
+        );
+
+        wires[8] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.centrifuge_getClaimCancelDepositRateLimitKey.selector,
+            ICentrifugeFacet.getClaimCancelDepositRateLimitKey.selector
+        );
+
+        wires[9] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.centrifuge_getCancelRedeemRateLimitKey.selector,
+            ICentrifugeFacet.getCancelRedeemRateLimitKey.selector
+        );
+
+        wires[10] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.centrifuge_getClaimCancelRedeemRateLimitKey.selector,
+            ICentrifugeFacet.getClaimCancelRedeemRateLimitKey.selector
+        );
+
+        wires[11] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.centrifuge_getTransferRateLimitKey.selector,
+            ICentrifugeFacet.getTransferRateLimitKey.selector
+        );
+
+        wires[12] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.centrifuge_VERSION.selector,
+            IFacet.VERSION.selector
+        );
+
+        wires[13] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.centrifuge_REQUEST_ID.selector,
+            ICentrifugeFacet.REQUEST_ID.selector
+        );
+
+        IEnumerableIntegrations.Config memory config = IEnumerableIntegrations.Config({
+            facet : centrifugeFacet,
+            wires : wires
+        });
+
+        beacon.setIntegration("CENTRIFUGE_FACET", config);
+    }
+
+    function _wireERC7540Facet() internal {
+        address erc7540Facet = address(new ERC7540Facet());
+
+        vm.label(erc7540Facet, "ERC7540Facet");
+
+        IEnumerableIntegrations.Wire[] memory wires = new IEnumerableIntegrations.Wire[](9);
+
+        wires[0] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.erc7540_requestDeposit.selector,
+            IERC7540Facet.requestDeposit.selector
+        );
+
+        wires[1] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.erc7540_claimDeposit.selector,
+            IERC7540Facet.claimDeposit.selector
+        );
+
+        wires[2] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.erc7540_requestRedeem.selector,
+            IERC7540Facet.requestRedeem.selector
+        );
+
+        wires[3] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.erc7540_claimRedeem.selector,
+            IERC7540Facet.claimRedeem.selector
+        );
+
+        wires[4] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.erc7540_getRequestDepositRateLimitKey.selector,
+            IERC7540Facet.getRequestDepositRateLimitKey.selector
+        );
+
+        wires[5] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.erc7540_getClaimDepositRateLimitKey.selector,
+            IERC7540Facet.getClaimDepositRateLimitKey.selector
+        );
+
+        wires[6] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.erc7540_getRequestRedeemRateLimitKey.selector,
+            IERC7540Facet.getRequestRedeemRateLimitKey.selector
+        );
+
+        wires[7] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.erc7540_getClaimRedeemRateLimitKey.selector,
+            IERC7540Facet.getClaimRedeemRateLimitKey.selector
+        );
+
+        wires[8] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.erc7540_VERSION.selector,
+            IFacet.VERSION.selector
+        );
+
+        IEnumerableIntegrations.Config memory config = IEnumerableIntegrations.Config({
+            facet : erc7540Facet,
+            wires : wires
+        });
+
+        beacon.setIntegration("ERC7540_FACET", config);
     }
 
 }

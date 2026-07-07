@@ -4,7 +4,7 @@ This document describes the weETH (wrapped eETH) integration with EtherFi, inclu
 
 ## Overview
 
-weETH is EtherFi's wrapped version of eETH (staked ETH). The integration allows the Diamond PAU system to deposit ETH into EtherFi's staking system and receive yield-bearing weETH tokens.
+weETH is EtherFi's wrapped version of eETH (staked ETH). The integration allows the PAU system to deposit ETH into EtherFi's staking system and receive yield-bearing weETH tokens.
 
 ## Why a Separate Module is Necessary
 
@@ -19,6 +19,7 @@ The weETH integration requires a dedicated `WEETHModule` contract due to EtherFi
 ### The Solution: WEETHModule
 
 The `WEETHModule` acts as an intermediary that:
+
 - Receives the `WithdrawRequestNFT` on behalf of the ALMProxy
 - Claims withdrawals when finalized
 - Converts received ETH to WETH
@@ -50,12 +51,12 @@ Understanding EtherFi's architecture is key to understanding why the module is n
 
 ### Core Contracts
 
-| Contract | Purpose |
-|----------|---------|
-| `weETH` | Wrapped eETH token (ERC-20), yield-bearing |
-| `eETH` | Liquid staking token representing staked ETH |
-| `LiquidityPool` | Core contract for deposits and withdrawal requests |
-| `WithdrawRequestNFT` | NFT representing pending withdrawal requests |
+| Contract             | Purpose                                            |
+| -------------------- | -------------------------------------------------- |
+| `weETH`              | Wrapped eETH token (ERC-20), yield-bearing         |
+| `eETH`               | Liquid staking token representing staked ETH       |
+| `LiquidityPool`      | Core contract for deposits and withdrawal requests |
+| `WithdrawRequestNFT` | NFT representing pending withdrawal requests       |
 
 ### Token Flow
 
@@ -70,9 +71,10 @@ Withdraw: weETH → eETH → WithdrawRequestNFT → (wait) → ETH → WETH
 
 ### Deposit (WETH → weETH)
 
-**Function:** `MainnetController.depositToWeETH(amount, minSharesOut)`
+**Function:** `deposit(amount, minSharesOut)`
 
 **Flow:**
+
 1. Unwrap WETH to ETH in ALMProxy
 2. Deposit ETH to EtherFi's `LiquidityPool` (returns eETH shares)
 3. Convert eETH shares to eETH amount
@@ -83,23 +85,27 @@ Withdraw: weETH → eETH → WithdrawRequestNFT → (wait) → ETH → WETH
 
 ### Request Withdrawal (weETH → NFT)
 
-**Function:** `MainnetController.requestWithdrawFromWeETH(weETHModule, shares)`
+**Function:** `requestWithdraw(weETHModule, weethShares, minEETHShares)`
+
+- `minEETHShares` provides slippage protection against cumulative rate slippage across both the weETH-to-eETH and eETH-to-shares conversions.
 
 **Flow:**
+
 1. Unwrap weETH to eETH in ALMProxy
 2. Approve eETH to LiquidityPool
 3. Call `LiquidityPool.requestWithdraw()` with WEETHModule as receiver
 4. WEETHModule receives the `WithdrawRequestNFT`
 
-**Rate Limit:** `LIMIT_WEETH_REQUEST_WITHDRAW` (keyed by weETHModule address)
+**Rate Limit:** `LIMIT_WEETH_REQUEST_WITHDRAW` keyed by `(eETH, liquidityPool, weETHModule)` via `makeAddressAddressAddressKey(LIMIT_WEETH_REQUEST_WITHDRAW, eETH, liquidityPool, weETHModule)`. The `eETH` address is read from `IWEETHLike(weeth).eETH()` and `liquidityPool` from `IEETHLike(eETH).liquidityPool()`.
 
 **Important:** The withdrawal request is not immediately claimable. EtherFi must finalize the request based on their liquidity and queue position.
 
 ### Claim Withdrawal (NFT → WETH)
 
-**Function:** `MainnetController.claimWithdrawalFromWeETH(weETHModule, requestId)`
+**Function:** `claimWithdrawal(weETHModule, requestId)`
 
 **Flow:**
+
 1. ALMProxy calls `WEETHModule.claimWithdrawal(requestId)`
 2. WEETHModule verifies the request is valid and finalized
 3. WEETHModule calls `WithdrawRequestNFT.claimWithdraw(requestId)`
@@ -107,7 +113,7 @@ Withdraw: weETH → eETH → WithdrawRequestNFT → (wait) → ETH → WETH
 5. WEETHModule wraps ETH to WETH
 6. WEETHModule transfers WETH to ALMProxy
 
-**Rate Limit:** `LIMIT_WEETH_CLAIM_WITHDRAW` (keyed by weETHModule address)
+**Rate Limit:** None decremented. Uses the [gate-check pattern](./RATE_LIMITS.md#gate-check-pattern) on `LIMIT_WEETH_CLAIM_WITHDRAW` keyed by `weETHModule` via `makeAddressKey(LIMIT_WEETH_CLAIM_WITHDRAW, weETHModule)`.
 
 ---
 
@@ -116,6 +122,7 @@ Withdraw: weETH → eETH → WithdrawRequestNFT → (wait) → ETH → WETH
 ### Purpose
 
 The `WEETHModule` is a minimal, upgradeable contract that:
+
 - Holds `WithdrawRequestNFT` tokens on behalf of the ALMProxy
 - Processes withdrawal claims
 - Converts ETH to WETH
@@ -129,10 +136,12 @@ function claimWithdrawal(uint256 requestId) external returns (uint256 ethReceive
 **Access:** Only callable by the configured `almProxy`
 
 **Checks:**
+
 - Request must be valid (not already claimed, not invalidated)
 - Request must be finalized (EtherFi has processed it)
 
 **Actions:**
+
 1. Claims the withdrawal from the NFT contract
 2. Wraps received ETH to WETH
 3. Transfers WETH to caller (ALMProxy)
@@ -163,11 +172,12 @@ receive() external payable { }
 
 ### Rate Limit Whitelisting
 
-The `weETHModule` address is embedded in the rate limit keys for withdrawal operations:
-- `LIMIT_WEETH_REQUEST_WITHDRAW` + weETHModule address
-- `LIMIT_WEETH_CLAIM_WITHDRAW` + weETHModule address
+The withdrawal rate limit keys embed addresses to lock down the integration:
 
-This ensures only governance-approved WEETHModule contracts can be used.
+- Request withdraw: `makeAddressAddressAddressKey(LIMIT_WEETH_REQUEST_WITHDRAW, eETH, liquidityPool, weETHModule)`
+- Claim withdraw (gate-check only): `makeAddressKey(LIMIT_WEETH_CLAIM_WITHDRAW, weETHModule)`
+
+The `eETH` address is sourced from `IWEETHLike(weeth).eETH()` and `liquidityPool` from `IEETHLike(eETH).liquidityPool()` at call time. Embedding these addresses prevents an unauthorized `weETHModule` from being used and locks the request-withdraw key to the configured `eETH` token and liquidity pool. The claim path uses a dedicated key keyed by `weETHModule` only.
 
 ### EtherFi Admin Risk
 
@@ -178,6 +188,7 @@ This ensures only governance-approved WEETHModule contracts can be used.
 ### Funds Never Stuck in Module
 
 The WEETHModule:
+
 - Only holds NFTs temporarily (between request and claim)
 - Immediately converts and transfers WETH on claim
 - Cannot accumulate ETH or WETH
@@ -190,9 +201,9 @@ The WEETHModule:
 
 1. Deploy `WEETHModule` proxy with implementation
 2. Initialize with admin and ALMProxy address
-3. Configure rate limit keys in MainnetController:
-   - `LIMIT_WEETH_DEPOSIT`
-   - `makeAddressKey(LIMIT_WEETH_REQUEST_WITHDRAW, weETHModule)`
+3. Configure rate limit keys in the Controller:
+   - `makeAddressAddressKey(LIMIT_WEETH_DEPOSIT, eETH, liquidityPool)`
+   - `makeAddressAddressAddressKey(LIMIT_WEETH_REQUEST_WITHDRAW, eETH, liquidityPool, weETHModule)`
    - `makeAddressKey(LIMIT_WEETH_CLAIM_WITHDRAW, weETHModule)`
 
 ### Monitoring

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity ^0.8.21;
+pragma solidity ^0.8.34;
 
 import { ALMProxyFreezable } from "../../../src/ALMProxyFreezable.sol";
 
@@ -7,7 +7,7 @@ import { MockTarget } from "../mocks/MockTarget.sol";
 
 import { UnitTestBase } from "../UnitTestBase.t.sol";
 
-abstract contract Freezable_RemoveController_TestBase is UnitTestBase {
+abstract contract Freezable_RemoveAllocator_TestBase is UnitTestBase {
 
     event ExampleEvent(
         address indexed exampleAddress,
@@ -17,13 +17,12 @@ abstract contract Freezable_RemoveController_TestBase is UnitTestBase {
         uint256 value
     );
 
-    event ControllerRemoved(address indexed relayer);
+    event AllocatorRemoved(address indexed allocator);
 
     ALMProxyFreezable almProxyFreezable;
 
     address target;
 
-    address controller     = makeAddr("controller");
     address exampleAddress = makeAddr("exampleAddress");
 
     bytes data = abi.encodeWithSignature(
@@ -36,8 +35,8 @@ abstract contract Freezable_RemoveController_TestBase is UnitTestBase {
         almProxyFreezable = new ALMProxyFreezable(admin);
 
         vm.startPrank(admin);
-        almProxyFreezable.grantRole(FREEZER,    freezer);
-        almProxyFreezable.grantRole(CONTROLLER, controller);
+        almProxyFreezable.grantRole(FREEZER_ROLE,   freezer);
+        almProxyFreezable.grantRole(ALLOCATOR_ROLE, allocator);
         vm.stopPrank();
 
         target = address(new MockTarget());
@@ -45,56 +44,68 @@ abstract contract Freezable_RemoveController_TestBase is UnitTestBase {
 
 }
 
-contract ALMProxy_Freezable_RemoveController_FailureTests is Freezable_RemoveController_TestBase {
+contract ALMProxy_Freezable_RemoveAllocator_FailureTests is Freezable_RemoveAllocator_TestBase {
 
-    function test_removeController_unauthorizedAccount() public {
+    function test_removeAllocator_unauthorizedAccount() public {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            FREEZER
+            FREEZER_ROLE
         ));
-        almProxyFreezable.removeController(controller);
+        almProxyFreezable.removeAllocator(allocator);
 
         vm.prank(admin);
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             admin,
-            FREEZER
+            FREEZER_ROLE
         ));
-        almProxyFreezable.removeController(controller);
+        almProxyFreezable.removeAllocator(allocator);
+    }
+
+    function test_removeAllocator_notLiveAllocator() public {
+        vm.prank(freezer);
+        vm.expectRevert("ALMProxyFreezable/not-live-allocator");
+        almProxyFreezable.removeAllocator(exampleAddress);
     }
 
 }
 
-contract ALMProxy_Freezable_RemoveController_SuccessTests is Freezable_RemoveController_TestBase {
+contract ALMProxy_Freezable_RemoveAllocator_SuccessTests is Freezable_RemoveAllocator_TestBase {
 
-    function test_removeController() public {
+    function test_removeAllocator() public {
         // ALM Proxy Freezable is msg.sender, target emits the event
         vm.expectEmit(target);
-        emit ExampleEvent(exampleAddress, 42, 84, address(almProxyFreezable), 0);
-        vm.prank(controller);
+        emit ExampleEvent({
+            exampleAddress : exampleAddress,
+            exampleValue   : 42,
+            exampleReturn  : 84,
+            caller         : address(almProxyFreezable),
+            value          : 0
+        });
+        vm.prank(allocator);
         bytes memory returnData = almProxyFreezable.doCall(target, data);
 
         assertEq(abi.decode(returnData, (uint256)), 84);
 
-        // Before has controller role
-        assertTrue(almProxyFreezable.hasRole(CONTROLLER, controller));
+        // Before has allocator role
+        assertTrue(almProxyFreezable.hasRole(ALLOCATOR_ROLE, allocator));
 
-        // Freezer comes in and removes controller.
+        // Freezer comes in and removes allocator.
         vm.prank(freezer);
         vm.expectEmit(address(almProxyFreezable));
-        emit ControllerRemoved(controller);
-        almProxyFreezable.removeController(controller);
+        emit AllocatorRemoved(allocator);
+        almProxyFreezable.removeAllocator(allocator);
 
-        // After no longer has controller role
-        assertFalse(almProxyFreezable.hasRole(CONTROLLER, controller));
+        // After no longer has allocator role
+        assertFalse(almProxyFreezable.hasRole(ALLOCATOR_ROLE, allocator));
 
-        // After can no longer call as controller
-        vm.prank(controller);
+        // After can no longer call as allocator
+        vm.prank(allocator);
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
-            controller,
-            CONTROLLER
+            allocator,
+            ALLOCATOR_ROLE
         ));
         almProxyFreezable.doCall(target, data);
     }

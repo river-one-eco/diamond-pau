@@ -1,4 +1,4 @@
-# Diamond PAU
+# Parallelized Allocation Unit (PAU)
 
 ![Foundry CI](https://github.com/marsfoundation/spark-alm-controller/actions/workflows/ci.yml/badge.svg)
 [![Foundry][foundry-badge]][foundry]
@@ -9,31 +9,35 @@
 
 ## Overview
 
-This repository contains the onchain components of the Diamond PAU system. The system enables controlled interaction with various DeFi protocols while enforcing rate limits and maintaining custody of funds through the ALMProxy.
+This repository contains the onchain components of the PAU system. The system enables controlled interaction with various DeFi protocols while enforcing rate limits and maintaining custody of funds through the ALMProxy.
 
 ### Core Contracts
 
-| Contract | Description |
-|----------|-------------|
-| `ALMProxy` | Proxy contract that holds custody of all funds and routes calls to external contracts |
-| `MainnetController` | Controller for Ethereum mainnet operations (Sky allocation, PSM, CCTP bridging) |
-| `ForeignController` | Controller for L2 operations (PSM, external protocols, CCTP bridging) |
-| `RateLimits` | Enforces and manages rate limits on controller operations |
-| `OTCBuffer` | Buffer contract for offchain OTC swap operations |
+| Contract         | Description                                                                           |
+| ---------------- | ------------------------------------------------------------------------------------- |
+| `ALMProxy`       | Proxy contract that holds custody of all funds and routes calls to external contracts |
+| `Beacon`         | Single source of truth for integration configs                                        |
+| `Controller`     | Unified controller with dispatch-based routing to specialized facets                  |
+| `RateLimits`     | Enforces and manages rate limits on controller operations                             |
+| `AccessControls` | Role-based access control for the system                                              |
+| `OTCBuffer`      | Buffer contract for offchain OTC swap operations                                      |
+| `PAUFactory`     | Factory contract that can deploy each component of the PAU system                     |
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [Architecture](./docs/ARCHITECTURE.md) | System architecture, contract interactions, and permissions |
-| [Rate Limits](./docs/RATE_LIMITS.md) | Rate limit design, calculations, and configuration |
-| [Liquidity Operations](./docs/LIQUIDITY_OPERATIONS.md) | Curve, Uniswap V4, OTC, and PSM integrations |
-| [weETH Integration](./docs/WEETH_INTEGRATION.md) | EtherFi weETH module architecture and withdrawal flow |
-| [Threat Model](./docs/THREAT_MODEL.md) | Attack vectors, trust assumptions, and security invariants |
-| [Security](./docs/SECURITY.md) | Protocol-specific considerations and audit information |
-| [Operational Requirements](./docs/OPERATIONAL_REQUIREMENTS.md) | Seeding, configuration, and onboarding checklists |
-| [Development](./docs/DEVELOPMENT.md) | Testing, deployment, and upgrade procedures |
-| [Code Notes](./docs/CODE_NOTES.md) | Implementation details and design decisions |
+| Document                                                       | Description                                                 |
+| -------------------------------------------------------------- | ----------------------------------------------------------- |
+| [Architecture](./docs/ARCHITECTURE.md)                         | System architecture, contract interactions, and permissions |
+| [Rate Limits](./docs/RATE_LIMITS.md)                           | Rate limit design, calculations, and configuration          |
+| [Liquidity Operations](./docs/LIQUIDITY_OPERATIONS.md)         | Curve, Uniswap V3, Uniswap V4, OTC, and PSM integrations    |
+| [weETH Integration](./docs/WEETH_INTEGRATION.md)               | EtherFi weETH module architecture and withdrawal flow       |
+| [Threat Model](./docs/THREAT_MODEL.md)                         | Attack vectors, trust assumptions, and security invariants  |
+| [Security](./docs/SECURITY.md)                                 | Protocol-specific considerations and audit information      |
+| [Operational Requirements](./docs/OPERATIONAL_REQUIREMENTS.md) | Seeding, configuration, and onboarding checklists           |
+| [Development](./docs/DEVELOPMENT.md)                           | Testing, deployment, and upgrade procedures                 |
+| [Code Notes](./docs/CODE_NOTES.md)                             | Implementation details and design decisions                 |
+| [Beacon](./docs/BEACON.md)                                     | Beacon integration configs, lifecycle, and versioning       |
+| [UniV3/V4 Comparison](./docs/UNIV3_UNIV4_COMPARISON.md)        | Functional differences between UniswapV3 and V4 facets      |
 
 ## Quick Start
 
@@ -43,46 +47,19 @@ This repository contains the onchain components of the Diamond PAU system. The s
 forge test
 ```
 
-### Deployments
-
-Deploy commands follow the pattern: `make deploy-<domain>-<env>-<type>`
-
-```bash
-# Deploy full Diamond PAU system to Base production
-make deploy-base-production-full
-
-# Deploy controller to Mainnet production
-make deploy-mainnet-production-controller
-
-# Deploy full staging environment
-make deploy-staging-full
-```
-
 See [Development Guide](./docs/DEVELOPMENT.md) for detailed instructions.
 
 ## Architecture Overview
 
-The controller contract is the entry point for all calls. It checks rate limits and executes logic, performing multiple calls to the ALMProxy atomically.
+The Beacon holds all integration configurations (facet addresses and selector wiring). The PAUFactory can deploy individual PAU system components (`ALMProxy`, `ALMProxyFreezable`, `RateLimits`, `AccessControls`, and `Controller`) with expected bytecode. The Controller is the entry point for all allocator calls. It syncs configs from the Beacon and dispatches to the appropriate facet, which checks rate limits and executes logic, performing calls to the ALMProxy atomically.
 
-```
-┌─────────────────┐     ┌──────────────────────┐     ┌─────────────────┐
-│     Relayer     │────▶│  MainnetController   │────▶│    ALMProxy     │
-│   (External)    │     │  or ForeignController│     │ (Funds Custody) │
-└─────────────────┘     └──────────────────────┘     └─────────────────┘
-                                   │                          │
-                                   │                          │
-                                   ▼                          ▼
-                        ┌──────────────────┐       ┌────────────────────┐
-                        │   RateLimits     │       │ External Protocols │
-                        │   (State Store)  │       │  (Sky, PSM, etc.)  │
-                        └──────────────────┘       └────────────────────┘
-```
+![PAU Architecture](docs/contract_interaction.png)
 
 See [Architecture Documentation](./docs/ARCHITECTURE.md) for detailed diagrams and explanations.
 
 ## Max Slippages
 
-Max slippage values throughout Diamond PAU integrations are defined as how close the resulting value should be to the expected or minimum value, **not** as how much deviation is allowed. This is an inverse way of denoting max slippages compared to common DeFi nomenclature.
+Max slippage values throughout PAU integrations are defined as how close the resulting value should be to the expected or minimum value, **not** as how much deviation is allowed. This is an inverse way of denoting max slippages compared to common DeFi nomenclature.
 
 ### How It Works
 
@@ -115,17 +92,17 @@ Particularly for the UniswapV4 integration, since the pools being interacted wit
 ### Key Trust Assumptions
 
 - **`DEFAULT_ADMIN_ROLE`**: Fully trusted, run by governance
-- **`RELAYER`**: Assumed compromisable - logic prevents unauthorized value movement
-- **`FREEZER`**: Can stop compromised relayers via `removeRelayer`
-
-See [Security Documentation](./docs/SECURITY.md) for complete trust assumptions and mitigations.
+- **`ALLOCATOR_ROLE`**: Assumed compromisable - logic prevents unauthorized value movement
+  See [Security Documentation](./docs/SECURITY.md) for complete trust assumptions and mitigations.
 
 ### Audits
 
 Audit reports are available in the [`audits/`](./audits/) directory. The system has been audited by:
+
 - Cantina
-- ChainSecurity
 - Certora
+- ChainSecurity
+- Unvariant
 
 ---
 

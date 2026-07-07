@@ -1,26 +1,27 @@
 # Operational Requirements
 
-This document describes operational requirements for deploying and managing integrations with Diamond PAU.
+This document describes operational requirements for deploying and managing integrations with PAU.
 
 ---
 
 ## Protocol Seeding Requirements
 
-Certain protocols require initialization before Diamond PAU can safely interact with them.
+Certain protocols require initialization before PAU can safely interact with them.
 
 ### ERC-4626 Vault Seeding
 
 **Requirement:** All ERC-4626 vaults **MUST** have initial burned shares.
 
-| Aspect | Details |
-|--------|---------|
-| **Purpose** | Prevents rounding-based frontrunning attacks |
+| Aspect             | Details                                                              |
+| ------------------ | -------------------------------------------------------------------- |
+| **Purpose**        | Prevents rounding-based frontrunning attacks                         |
 | **Implementation** | Initial shares must be minted and burned (sent to zero/dead address) |
-| **Permanence** | Burned shares must be unrecoverable |
+| **Permanence**     | Burned shares must be unrecoverable                                  |
 
 **Additional Protection:** Donation attacks are protected against with the `maxExchangeRate` mechanism.
 
 **Attack Prevented:** Without burned shares, an attacker could:
+
 1. Deposit minimal amount to get shares
 2. Donate assets directly to vault to inflate share price
 3. Exploit rounding when victim deposits to steal funds
@@ -33,17 +34,16 @@ Certain protocols require initialization before Diamond PAU can safely interact 
 
 **Requirement:** Uniswap V4 pools must be seeded with initial liquidity before use. Seeding must be done to an unrecoverable address (e.g, address(1)). This will prevent any unintended behaviours.
 
-
 ---
 
 ## Token Requirements
 
-All ERC-20 tokens used with Diamond PAU must be:
+All ERC-20 tokens used with PAU must be:
 
-| Requirement | Rationale |
-|-------------|-----------|
-| **Non-rebasing** | Rebasing tokens cause accounting inconsistencies |
-| **≥6 decimals** | Prevents precision loss in rate limit calculations |
+| Requirement         | Rationale                                                  |
+| ------------------- | ---------------------------------------------------------- |
+| **Non-rebasing**    | Rebasing tokens cause accounting inconsistencies           |
+| **≥6 decimals**     | Prevents precision loss in rate limit calculations         |
 | **Standard ERC-20** | Non-standard implementations may cause unexpected behavior |
 
 ---
@@ -54,13 +54,13 @@ All ERC-20 tokens used with Diamond PAU must be:
 - Unconfigured integrations will revert on interaction
 - Rate limit keys act as a whitelist (see [Rate Limits](./RATE_LIMITS.md))
 
-### Withdrawal Dependencies
+# Maple Deposits
 
-| Withdrawal Function | Required |
-|--------------------|----------|
-| `withdrawERC4626` | Non-zero deposit rate limit for same vault |
-| `redeemERC4626` | Non-zero deposit rate limit for same vault |
-| `withdrawAave` | Non-zero deposit rate limit for same aToken |
+Maple Finance pools have an impairment lifecycle where `unrealizedLosses` can rise while `totalAssets` remains unchanged. Deposits price shares using `convertToShares`, which uses gross `totalAssets`, while redemptions price shares using `convertToExitAssets`, which is decreased during impairment. Therefore, deposits and immediate redemptions will be subject to immediate losses on an impaired pool.
+
+The `ERC4626Facet` does not check that `unrealizedLosses()` is zero on a Maple pool during the deposit flow, which can result in socializing pre-existing losses onto PAU through fresh deposits.
+
+Governance (via a spell to set rate limits for deposits to such Maple Pools) should mitigate this risk as soon as unrealized losses are posted to a Maple pool.
 
 ---
 
@@ -77,11 +77,12 @@ When deploying a new OTC buffer:
 
 ---
 
-## Uniswap V4 Pool Onboarding
+## Uniswap V3/V4 Pool Onboarding
 
 ### Asset Restrictions
 
-Only pools with 1:1 assets can be onboarded:
+Only pools with 1:1 assets should be onboarded:
+
 - USDC/USDT ✓
 - USDC/DAI ✓
 - USDC/USDS ✓
@@ -93,14 +94,14 @@ Only pools with 1:1 assets can be onboarded:
 1. Verify pool contains only whitelisted 1:1 stablecoins
 2. Verify pool does not have dangerous hooks
 3. Configure rate limits for the specific pool
-4. Configure tick limits for the specific pool
+4. Configure pool parameters (e.g. tick limits, TWAP seconds, etc.) for the specific pool
 5. Set appropriate slippage parameters
 
 ---
 
 ## General Onboarding Process
 
-1. **Verify protocol compatibility** with Diamond PAU requirements
+1. **Verify protocol compatibility** with PAU requirements
 2. **Configure rate limit keys** via governance
 3. **Set safety parameters** if applicable
 4. **Test on fork** before mainnet deployment
@@ -110,12 +111,18 @@ Only pools with 1:1 assets can be onboarded:
 
 ## Monitoring Recommendations
 
-| Integration | Monitor |
-|-------------|---------|
-| **All** | Rate limit utilization, transaction failures |
-| **UniswapV4** | Pool price |
-| **ERC-4626** | Exchange rate changes, share price manipulation |
-| **OTC** | Outstanding swap amounts, recharge progress |
-| **weETH** | Pending withdrawal NFTs, finalization delays |
-| **CCTP/LayerZero** | Bridge confirmation times, stuck transfers |
-| **Ethena** | Pending mint/burn operations, delegated signer status |
+| Integration        | Monitor                                               |
+| ------------------ | ----------------------------------------------------- |
+| **All**            | Rate limit utilization, transaction failures          |
+| **Centrifuge**     | Pending async requests, cross-chain transfer status   |
+| **CCTP/LayerZero** | Bridge confirmation times, stuck transfers            |
+| **Curve**          | Pool price, virtual price                             |
+| **ERC-4626**       | Exchange rate changes, share price manipulation       |
+| **ERC-7540**       | Pending async deposit/redeem requests                 |
+| **Ethena**         | Pending mint/burn operations, delegated signer status |
+| **Maple**          | Pending redemption requests                           |
+| **OTC**            | Outstanding swap amounts, recharge progress           |
+| **UniswapV3**      | Pool price, position value                            |
+| **UniswapV4**      | Pool price, position value                            |
+| **weETH**          | Pending withdrawal NFTs, finalization delays          |
+| **wstETH**         | Pending withdrawal requests, finalization delays      |

@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity ^0.8.21;
+pragma solidity ^0.8.34;
 
 import { ReentrancyGuard } from "../../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
-import { ForkTestBase } from "./ForkTestBase.t.sol";
-
 import { Ethereum } from "../../lib/spark-address-registry/src/Ethereum.sol";
 
-import { makeAddressAddressKey } from "../../src/RateLimitHelpers.sol";
-import { RateLimits }            from "../../src/RateLimits.sol";
+import { ISuperstateFacet } from "../../src/facets/superstate/ISuperstateFacet.sol";
 
 import { ForkTestBase } from "./ForkTestBase.t.sol";
 
@@ -66,12 +63,14 @@ abstract contract Superstate_TestBase is ForkTestBase {
     ISSTokenLike internal constant USCC = ISSTokenLike(Ethereum.USCC);
     ISSTokenLike internal constant USTB = ISSTokenLike(Ethereum.USTB);
 
-    bytes32 internal constant KEY = keccak256("LIMIT_SUPERSTATE_SUBSCRIBE");
+    bytes32 internal key;
 
     address internal sweepDestination;
 
     function setUp() public virtual override {
         super.setUp();
+
+        key = mainnetController.superstate_subscribeRateLimitKey();
 
         ( sweepDestination, ) = USTB.supportedStablecoins(Ethereum.USDC);
 
@@ -82,7 +81,7 @@ abstract contract Superstate_TestBase is ForkTestBase {
         vm.stopPrank();
 
         vm.prank(Ethereum.SPARK_PROXY);
-        rateLimits.setRateLimitData(KEY, 1_000_000e6, uint256(1_000_000e6) / 1 days);
+        rateLimits.setRateLimitData(key, 1_000_000e6, uint256(1_000_000e6) / 1 days);
     }
 
     function _getBlock() internal pure override returns (uint256) {
@@ -96,45 +95,45 @@ contract MainnetController_Superstate_Subscribe_Tests is Superstate_TestBase {
     function test_subscribeSuperstate_reentrancy() external {
         _setControllerEntered();
         vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        mainnetController.subscribeSuperstate(1_000_000e6);
+        mainnetController.superstate_subscribe(1_000_000e6);
     }
 
-    function test_subscribeSuperstate_notRelayer() external {
+    function test_subscribeSuperstate_notAllocator() external {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            ALLOCATOR_ROLE
         ));
-        mainnetController.subscribeSuperstate(1_000_000e6);
+        mainnetController.superstate_subscribe(1_000_000e6);
     }
 
     function test_subscribeSuperstate_zeroMaxAmount() external {
         vm.prank(Ethereum.SPARK_PROXY);
-        rateLimits.setRateLimitData(KEY, 0, 0);
+        rateLimits.setRateLimitData(key, 0, 0);
 
         vm.expectRevert("RateLimits/zero-maxAmount");
-        vm.prank(relayer);
-        mainnetController.subscribeSuperstate(1_000_000e6);
+        vm.prank(allocator);
+        mainnetController.superstate_subscribe(1_000_000e6);
     }
 
     function test_subscribeSuperstate_rateLimitBoundary() external {
         deal(Ethereum.USDC, address(almProxy), 5_000_000e6);
 
         vm.prank(Ethereum.SPARK_PROXY);
-        rateLimits.setRateLimitData(KEY, 1_000_000e6, uint256(1_000_000e6) / 1 days);
+        rateLimits.setRateLimitData(key, 1_000_000e6, uint256(1_000_000e6) / 1 days);
 
         vm.expectRevert("RateLimits/rate-limit-exceeded");
-        vm.prank(relayer);
-        mainnetController.subscribeSuperstate(1_000_000e6 + 1);
+        vm.prank(allocator);
+        mainnetController.superstate_subscribe(1_000_000e6 + 1);
 
-        vm.prank(relayer);
-        mainnetController.subscribeSuperstate(1_000_000e6);
+        vm.prank(allocator);
+        mainnetController.superstate_subscribe(1_000_000e6);
     }
 
     function test_subscribeSuperstate() external {
         deal(Ethereum.USDC, address(almProxy), 1_000_000e6);
 
-        assertEq(rateLimits.getCurrentRateLimit(KEY), 1_000_000e6);
+        assertEq(rateLimits.getCurrentRateLimit(key), 1_000_000e6);
 
         assertEq(USDC.allowance(address(almProxy), Ethereum.USTB), 0);
 
@@ -143,7 +142,7 @@ contract MainnetController_Superstate_Subscribe_Tests is Superstate_TestBase {
 
         assertEq(USTB.balanceOf(address(almProxy)), 0);
 
-        assertEq(rateLimits.getCurrentRateLimit(KEY), 1_000_000e6);
+        assertEq(rateLimits.getCurrentRateLimit(key), 1_000_000e6);
 
         uint256 totalSupply = USTB.totalSupply();
 
@@ -159,12 +158,15 @@ contract MainnetController_Superstate_Subscribe_Tests is Superstate_TestBase {
 
         vm.record();
 
-        vm.prank(relayer);
-        mainnetController.subscribeSuperstate(1_000_000e6);
+        vm.expectEmit(address(mainnetController));
+        emit ISuperstateFacet.SuperstateSubscribe(1_000_000e6);
+
+        vm.prank(allocator);
+        mainnetController.superstate_subscribe(1_000_000e6);
 
         _assertReentrancyGuardWrittenToTwice();
 
-        assertEq(rateLimits.getCurrentRateLimit(KEY), 0);
+        assertEq(rateLimits.getCurrentRateLimit(key), 0);
 
         assertEq(USDC.allowance(address(almProxy), sweepDestination), 0);
 
@@ -174,7 +176,7 @@ contract MainnetController_Superstate_Subscribe_Tests is Superstate_TestBase {
         assertEq(USTB.balanceOf(address(almProxy)), expectedUSTB);
         assertEq(USTB.totalSupply(),                totalSupply + expectedUSTB);
 
-        assertEq(rateLimits.getCurrentRateLimit(KEY), 0);
+        assertEq(rateLimits.getCurrentRateLimit(key), 0);
     }
 
 }
@@ -190,22 +192,14 @@ contract MainnetController_Superstate_E2ETests is Superstate_TestBase {
 
         // Rate limit to transfer USDC to USCC deposit addressx to mint USCC
         rateLimits.setRateLimitData(
-            makeAddressAddressKey(
-                mainnetController.LIMIT_ASSET_TRANSFER(),
-                Ethereum.USDC,
-                address(usccDepositAddress)
-            ),
+            mainnetController.transferAsset_getTransferRateLimitKey(Ethereum.USDC, address(usccDepositAddress)),
             1_000_000e6,
             uint256(1_000_000e6) / 1 days
         );
 
         // Rate limit to transfer USCC to USCC to burn USCC for USDC
         rateLimits.setRateLimitData(
-            makeAddressAddressKey(
-                mainnetController.LIMIT_ASSET_TRANSFER(),
-                Ethereum.USCC,
-                Ethereum.USCC
-            ),
+            mainnetController.transferAsset_getTransferRateLimitKey(Ethereum.USCC, Ethereum.USCC),
             1_000_000e6,
             uint256(1_000_000e6) / 1 days
         );
@@ -221,8 +215,8 @@ contract MainnetController_Superstate_E2ETests is Superstate_TestBase {
 
         // Step 1: Transfer USDC to USCC deposit address to trigger minting USCC
 
-        vm.prank(relayer);
-        mainnetController.transferAsset(Ethereum.USDC, address(usccDepositAddress), 1_000_000e6);
+        vm.prank(allocator);
+        mainnetController.transferAsset_transfer(Ethereum.USDC, address(usccDepositAddress), 1_000_000e6);
 
         assertEq(USDC.balanceOf(address(almProxy)),  0);
         assertEq(USDC.balanceOf(usccDepositAddress), 1_000_000e6);
@@ -243,8 +237,8 @@ contract MainnetController_Superstate_E2ETests is Superstate_TestBase {
 
         // Step 3: Transfer USCC to USCC to trigger burning USCC for USDC
 
-        vm.prank(relayer);
-        mainnetController.transferAsset(Ethereum.USCC, Ethereum.USCC, 900_000e6);
+        vm.prank(allocator);
+        mainnetController.transferAsset_transfer(Ethereum.USCC, Ethereum.USCC, 900_000e6);
 
         assertEq(USCC.balanceOf(address(almProxy)), 0);
         assertEq(USCC.balanceOf(Ethereum.USCC),     0);

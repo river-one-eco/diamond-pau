@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity ^0.8.21;
+pragma solidity ^0.8.34;
 
 import { Ethereum } from "../../lib/spark-address-registry/src/Ethereum.sol";
 
-import { makeAddressAddressKey } from "../../src/RateLimitHelpers.sol";
+import { ITransferAssetFacet } from "../../src/facets/transfer-asset/ITransferAssetFacet.sol";
 
 import { ForkTestBase } from "./ForkTestBase.t.sol";
 
@@ -23,27 +23,23 @@ abstract contract BUIDL_TestBase is ForkTestBase {
 
 contract MainnetController_BUIDL_Deposit_Tests is BUIDL_TestBase {
 
-    function test_transferAsset_notRelayer() external {
+    function test_transferAsset_notAllocator() external {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            RELAYER
+            ALLOCATOR_ROLE
         ));
-        mainnetController.transferAsset(Ethereum.USDC, buidlDeposit, 1_000_000e6);
+        mainnetController.transferAsset_transfer(Ethereum.USDC, buidlDeposit, 1_000_000e6);
     }
 
     function test_transferAsset_zeroMaxAmount() external {
         vm.expectRevert("RateLimits/zero-maxAmount");
-        vm.prank(relayer);
-        mainnetController.transferAsset(Ethereum.USDC, buidlDeposit, 0);
+        vm.prank(allocator);
+        mainnetController.transferAsset_transfer(Ethereum.USDC, buidlDeposit, 0);
     }
 
     function test_transferAsset_rateLimitsBoundary() external {
-        bytes32 key = makeAddressAddressKey(
-            mainnetController.LIMIT_ASSET_TRANSFER(),
-            Ethereum.USDC,
-            buidlDeposit
-        );
+        bytes32 key = mainnetController.transferAsset_getTransferRateLimitKey(Ethereum.USDC, buidlDeposit);
 
         vm.prank(Ethereum.SPARK_PROXY);
         rateLimits.setRateLimitData(key, 1_000_000e6, uint256(1_000_000e6) / 1 days);
@@ -51,19 +47,15 @@ contract MainnetController_BUIDL_Deposit_Tests is BUIDL_TestBase {
         deal(Ethereum.USDC, address(almProxy), 1_000_000e6);
 
         vm.expectRevert("RateLimits/rate-limit-exceeded");
-        vm.prank(relayer);
-        mainnetController.transferAsset(Ethereum.USDC, buidlDeposit, 1_000_000e6 + 1);
+        vm.prank(allocator);
+        mainnetController.transferAsset_transfer(Ethereum.USDC, buidlDeposit, 1_000_000e6 + 1);
 
-        vm.prank(relayer);
-        mainnetController.transferAsset(Ethereum.USDC, buidlDeposit, 1_000_000e6);
+        vm.prank(allocator);
+        mainnetController.transferAsset_transfer(Ethereum.USDC, buidlDeposit, 1_000_000e6);
     }
 
     function test_transferAsset() external {
-        bytes32 key = makeAddressAddressKey(
-            mainnetController.LIMIT_ASSET_TRANSFER(),
-            Ethereum.USDC,
-            buidlDeposit
-        );
+        bytes32 key = mainnetController.transferAsset_getTransferRateLimitKey(Ethereum.USDC, buidlDeposit);
 
         vm.prank(Ethereum.SPARK_PROXY);
         rateLimits.setRateLimitData(key, 1_000_000e6, uint256(1_000_000e6) / 1 days);
@@ -75,8 +67,11 @@ contract MainnetController_BUIDL_Deposit_Tests is BUIDL_TestBase {
         assertEq(USDC.balanceOf(address(almProxy)), 1_000_000e6);
         assertEq(USDC.balanceOf(buidlDeposit),      0);
 
-        vm.prank(relayer);
-        mainnetController.transferAsset(Ethereum.USDC, buidlDeposit, 1_000_000e6);
+        vm.expectEmit(address(mainnetController));
+        emit ITransferAssetFacet.TransferAssetTransfer(Ethereum.USDC, buidlDeposit, 1_000_000e6);
+
+        vm.prank(allocator);
+        mainnetController.transferAsset_transfer(Ethereum.USDC, buidlDeposit, 1_000_000e6);
 
         assertEq(rateLimits.getCurrentRateLimit(key), 0);
 

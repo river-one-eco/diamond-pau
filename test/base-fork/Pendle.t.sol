@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity ^0.8.21;
+pragma solidity ^0.8.34;
 
 import { ReentrancyGuard } from "../../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
 import { Base as SparkBase } from "../../lib/spark-address-registry/src/Base.sol";
 import { Base as GroveBase } from "../../lib/grove-address-registry/src/Base.sol";
 
-import { makeAddressKey } from "../../src/RateLimitHelpers.sol";
+import { IPendleFacet } from "../../src/facets/pendle/IPendleFacet.sol";
 
 import { ForkTestBase } from "./ForkTestBase.t.sol";
 
@@ -38,7 +38,7 @@ interface IYTLike {
 
 }
 
-contract PendleTestBase is ForkTestBase {
+abstract contract Pendle_TestBase is ForkTestBase {
 
     // USDe 11 Dec 2025 market
     IPendleMarketLike pendleMarket = IPendleMarketLike(0x8991847176b1D187e403dd92a4E55fC8d7684538);
@@ -50,13 +50,9 @@ contract PendleTestBase is ForkTestBase {
     function setUp() public virtual override {
         super.setUp();
 
-        vm.prank(SparkBase.SPARK_EXECUTOR);
-        foreignController.setPendleRouter(GroveBase.PENDLE_ROUTER);
+        ( , address pt, ) = pendleMarket.readTokens();
 
-        redeemKey = makeAddressKey(
-            foreignController.LIMIT_PENDLE_PT_REDEEM(),
-            address(pendleMarket)
-        );
+        redeemKey = foreignController.pendle_getRedeemRateLimitKey(address(pendleMarket), pt);
 
         vm.prank(SparkBase.SPARK_EXECUTOR);
         rateLimits.setRateLimitData(redeemKey, 10_000_000e18, uint256(10_000_000e18) / 1 days);
@@ -68,90 +64,42 @@ contract PendleTestBase is ForkTestBase {
 
 }
 
-contract ForeignControllerSetPendleRouterFailureTests is PendleTestBase {
+contract ForeignController_Pendle_Redeem_FailureTests is Pendle_TestBase {
 
-    function test_setPendleRouter_reentrancy() public {
-        _setControllerEntered();
-        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
-        foreignController.setPendleRouter(GroveBase.PENDLE_ROUTER);
-    }
-
-    function test_setPendleRouter_notAdmin() public {
+    function test_redeemPendlePT_notAllocator() public {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            DEFAULT_ADMIN_ROLE
+            ALLOCATOR_ROLE
         ));
-        foreignController.setPendleRouter(GroveBase.PENDLE_ROUTER);
-    }
-
-}
-
-contract ForeignControllerSetPendleRouterSuccessTests is PendleTestBase {
-
-    function setUp() public override {
-        super.setUp();
-
-        vm.prank(SparkBase.SPARK_EXECUTOR);
-        foreignController.setPendleRouter(address(0));
-    }
-
-    function test_setPendleRouter_success() public {
-        assertEq(foreignController.pendleRouter(), address(0));
-
-        vm.prank(SparkBase.SPARK_EXECUTOR);
-        foreignController.setPendleRouter(GroveBase.PENDLE_ROUTER);
-
-        assertEq(foreignController.pendleRouter(), GroveBase.PENDLE_ROUTER);
-    }
-
-}
-
-contract ForeignControllerRedeemFailurePendleTests is PendleTestBase {
-
-    function test_redeemPendlePT_pendleRouterNotSet() public {
-        vm.prank(SparkBase.SPARK_EXECUTOR);
-        foreignController.setPendleRouter(address(0));
-
-        vm.prank(relayer);
-        vm.expectRevert("PendleLib/pendle-router-not-set");
-        foreignController.redeemPendlePT(address(pendleMarket), 50_000e18, 1);
-    }
-
-    function test_redeemPendlePT_notRelayer() public {
-        vm.expectRevert(abi.encodeWithSignature(
-            "AccessControlUnauthorizedAccount(address,bytes32)",
-            address(this),
-            RELAYER
-        ));
-        foreignController.redeemPendlePT(address(pendleMarket), 50_000e18, 1);
+        foreignController.pendle_redeem(address(pendleMarket), 50_000e18, 1);
     }
 
     function test_redeemPendlePT_marketNotExpired() public {
         vm.warp(pendleMarket.expiry() - 1);
 
-        vm.prank(relayer);
-        vm.expectRevert("PendleLib/market-not-expired");
-        foreignController.redeemPendlePT(address(pendleMarket), 50_000e18, 1);
+        vm.prank(allocator);
+        vm.expectRevert("PendleFacet/market-not-expired");
+        foreignController.pendle_redeem(address(pendleMarket), 50_000e18, 1);
     }
 
     function test_redeemPendlePT_zeroMaxAmount() public {
         vm.prank(SparkBase.SPARK_EXECUTOR);
         rateLimits.setRateLimitData(redeemKey, 0, 0);
 
-        (, address pt,) = pendleMarket.readTokens();
+        ( , address pt, ) = pendleMarket.readTokens();
         vm.prank(PT_WHALE);
         IERC20Like(pt).transfer((address(almProxy)), 100_000e18);
 
         vm.warp(pendleMarket.expiry());
 
-        vm.prank(relayer);
+        vm.prank(allocator);
         vm.expectRevert("RateLimits/zero-maxAmount");
-        foreignController.redeemPendlePT(address(pendleMarket), 50_000e18, 1);
+        foreignController.pendle_redeem(address(pendleMarket), 50_000e18, 1);
     }
 
     function test_redeemPendlePT_rateLimitsBoundary() public {
-        (, address pt, address yt) = pendleMarket.readTokens();
+        ( , address pt, address yt ) = pendleMarket.readTokens();
         vm.prank(PT_WHALE);
         IERC20Like(pt).transfer((address(almProxy)), 100_000e18);
 
@@ -163,45 +111,45 @@ contract ForeignControllerRedeemFailurePendleTests is PendleTestBase {
         vm.prank(SparkBase.SPARK_EXECUTOR);
         rateLimits.setRateLimitData(redeemKey, exactAmountOut - 1, 1);
 
-        vm.prank(relayer);
+        vm.prank(allocator);
         vm.expectRevert("RateLimits/rate-limit-exceeded");
-        foreignController.redeemPendlePT(address(pendleMarket), 50_000e18, 1);
+        foreignController.pendle_redeem(address(pendleMarket), 50_000e18, 1);
     }
 
     function test_redeemPendlePT_insufficientBalance() public {
-        (, address pt,) = pendleMarket.readTokens();
+        ( , address pt, ) = pendleMarket.readTokens();
         vm.prank(PT_WHALE);
         IERC20Like(pt).transfer((address(almProxy)), 100_000e18);
 
         vm.warp(pendleMarket.expiry());
 
-        vm.prank(relayer);
+        vm.prank(allocator);
         vm.expectRevert("ERC20: transfer amount exceeds balance");
-        foreignController.redeemPendlePT(address(pendleMarket), 100_000e18 + 1, 1);
+        foreignController.pendle_redeem(address(pendleMarket), 100_000e18 + 1, 1);
     }
 
     function test_redeemPendlePT_amountTooSmall() public {
-        (, address pt,) = pendleMarket.readTokens();
+        ( , address pt, ) = pendleMarket.readTokens();
         vm.prank(PT_WHALE);
         IERC20Like(pt).transfer((address(almProxy)), 100_000e18);
 
         vm.warp(pendleMarket.expiry());
 
-        vm.prank(relayer);
+        vm.prank(allocator);
         vm.expectRevert("panic: arithmetic underflow or overflow (0x11)");
-        foreignController.redeemPendlePT(address(pendleMarket), 4, 1);
+        foreignController.pendle_redeem(address(pendleMarket), 4, 1);
     }
 
     function test_redeemPendlePT_minAmountOutNotSet() public {
         vm.warp(pendleMarket.expiry());
 
-        vm.prank(relayer);
-        vm.expectRevert("PendleLib/min-amount-out-not-set");
-        foreignController.redeemPendlePT(address(pendleMarket), 100_000e18, 0);
+        vm.prank(allocator);
+        vm.expectRevert("PendleFacet/min-amount-out-not-set");
+        foreignController.pendle_redeem(address(pendleMarket), 100_000e18, 0);
     }
 
     function test_redeemPendlePT_minAmountOutNotMet() public {
-        (, address pt, address yt) = pendleMarket.readTokens();
+        ( , address pt, address yt ) = pendleMarket.readTokens();
         vm.prank(PT_WHALE);
         IERC20Like(pt).transfer((address(almProxy)), 100_000e18);
 
@@ -210,25 +158,25 @@ contract ForeignControllerRedeemFailurePendleTests is PendleTestBase {
         uint256 pyIndexCurrent = IYTLike(yt).pyIndexCurrent();
         uint256 exactAmountOut = 100_000e18 * 1e18 / pyIndexCurrent; // Exact at this particular point in time
 
-        vm.prank(relayer);
-        vm.expectRevert("PendleLib/min-amount-not-met");
-        foreignController.redeemPendlePT(address(pendleMarket), 100_000e18, exactAmountOut + 1);
+        vm.prank(allocator);
+        vm.expectRevert("PendleFacet/min-amount-not-met");
+        foreignController.pendle_redeem(address(pendleMarket), 100_000e18, exactAmountOut + 1);
 
-        vm.prank(relayer);
-        foreignController.redeemPendlePT(address(pendleMarket), 100_000e18, exactAmountOut);
+        vm.prank(allocator);
+        foreignController.pendle_redeem(address(pendleMarket), 100_000e18, exactAmountOut);
 
     }
 
 }
 
-contract ForeignControllerRedeemSuccessPendleTests is PendleTestBase {
+contract ForeignController_Pendle_Redeem_SuccessTests is Pendle_TestBase {
 
     function test_redeemPendlePT() public {
         // Default Pendle market used in tests is already a sUSDe market
 
         address ptDonor = PT_WHALE;
 
-        (address sy, address pt, address yt) = pendleMarket.readTokens();
+        ( address sy, address pt, address yt ) = pendleMarket.readTokens();
         IERC20Like yieldToken = IERC20Like(ISYLike(sy).yieldToken());
 
         vm.startPrank(ptDonor);
@@ -243,8 +191,11 @@ contract ForeignControllerRedeemSuccessPendleTests is PendleTestBase {
         uint256 pyIndexCurrent = IYTLike(yt).pyIndexCurrent();
         uint256 exactAmountOut = 50_000e18 * 1e18 / pyIndexCurrent;
 
-        vm.prank(relayer);
-        foreignController.redeemPendlePT(address(pendleMarket), 50_000e18, exactAmountOut);
+        vm.expectEmit(address(foreignController));
+        emit IPendleFacet.PendleRedeem(address(pendleMarket), 50_000e18, exactAmountOut);
+
+        vm.prank(allocator);
+        foreignController.pendle_redeem(address(pendleMarket), 50_000e18, exactAmountOut);
 
         assertEq(IERC20Like(pt).balanceOf(address(almProxy)), 50_000e18);
         assertEq(yieldToken.balanceOf(address(almProxy)),     50_000e18 * 1e18 / pyIndexCurrent);
@@ -254,8 +205,11 @@ contract ForeignControllerRedeemSuccessPendleTests is PendleTestBase {
         pyIndexCurrent = IYTLike(yt).pyIndexCurrent();
         exactAmountOut = 50_000e18 * 1e18 / pyIndexCurrent;
 
-        vm.prank(relayer);
-        foreignController.redeemPendlePT(address(pendleMarket), 50_000e18, exactAmountOut);
+        vm.expectEmit(address(foreignController));
+        emit IPendleFacet.PendleRedeem(address(pendleMarket), 50_000e18, exactAmountOut);
+
+        vm.prank(allocator);
+        foreignController.pendle_redeem(address(pendleMarket), 50_000e18, exactAmountOut);
 
         assertEq(IERC20Like(pt).balanceOf(address(almProxy)), 0);
         assertEq(yieldToken.balanceOf(address(almProxy)),     100_000e18 * 1e18 / pyIndexCurrent);

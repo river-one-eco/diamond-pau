@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity ^0.8.21;
+pragma solidity ^0.8.34;
 
 import { Test } from "../../lib/forge-std/src/Test.sol";
 
@@ -9,58 +9,89 @@ import { ERC20Mock } from "../../lib/openzeppelin-contracts/contracts/mocks/toke
 
 import { Base } from "../../lib/spark-address-registry/src/Base.sol";
 
+import { Base as GroveBase } from "../../lib/grove-address-registry/src/Base.sol";
+
 import { PSM3Deploy } from "../../lib/spark-psm/deploy/PSM3Deploy.sol";
 import { IPSM3 }      from "../../lib/spark-psm/src/PSM3.sol";
 
-import { CCTPForwarder } from "../../lib/xchain-helpers/src/forwarders/CCTPForwarder.sol";
+import { IFacet } from "../../src/facets/IFacet.sol";
 
-import { ForeignControllerDeploy }       from "../../deploy/ControllerDeploy.sol";
-import { ControllerInstance }            from "../../deploy/ControllerInstance.sol";
-import { ForeignControllerInit as Init } from "../../deploy/ForeignControllerInit.sol";
+import { IAaveFacet }          from "../../src/facets/aave/IAaveFacet.sol";
+import { IERC4626Facet }       from "../../src/facets/erc4626/IERC4626Facet.sol";
+import { IMerklFacet }         from "../../src/facets/merkl/IMerklFacet.sol";
+import { IPendleFacet }        from "../../src/facets/pendle/IPendleFacet.sol";
+import { IPSM3Facet }          from "../../src/facets/psm3/IPSM3Facet.sol";
+import { ISparkVaultFacet }    from "../../src/facets/spark-vault/ISparkVaultFacet.sol";
+import { ITransferAssetFacet } from "../../src/facets/transfer-asset/ITransferAssetFacet.sol";
+import { IUniswapV3Facet }     from "../../src/facets/uniswap-v3/IUniswapV3Facet.sol";
 
-import { ALMProxy }          from "../../src/ALMProxy.sol";
-import { ForeignController } from "../../src/ForeignController.sol";
-import { RateLimitHelpers }  from "../../src/RateLimitHelpers.sol";
-import { RateLimits }        from "../../src/RateLimits.sol";
+import { AaveFacet }          from "../../src/facets/aave/AaveFacet.sol";
+import { ERC4626Facet }       from "../../src/facets/erc4626/ERC4626Facet.sol";
+import { MerklFacet }         from "../../src/facets/merkl/MerklFacet.sol";
+import { PendleFacet }        from "../../src/facets/pendle/PendleFacet.sol";
+import { PSM3Facet }          from "../../src/facets/psm3/PSM3Facet.sol";
+import { SparkVaultFacet }    from "../../src/facets/spark-vault/SparkVaultFacet.sol";
+import { TransferAssetFacet } from "../../src/facets/transfer-asset/TransferAssetFacet.sol";
+import { UniswapV3Facet }     from "../../src/facets/uniswap-v3/UniswapV3Facet.sol";
+
+import { IAccessControls }         from "../../src/interfaces/IAccessControls.sol";
+import { IALMProxy }               from "../../src/interfaces/IALMProxy.sol";
+import { IEnumerableIntegrations } from "../../src/interfaces/IEnumerableIntegrations.sol";
+import { IRateLimits }             from "../../src/interfaces/IRateLimits.sol";
+
+import { Beacon }     from "../../src/Beacon.sol";
+import { PAUFactory } from "../../src/PAUFactory.sol";
+
+import { IForeignControllerFull }  from "../interfaces/IForeignControllerFull.sol";
 
 abstract contract ForkTestBase is Test {
 
     // TODO: Refactor to use live addresses
 
+    struct MintRecipient {
+        uint32  domain;
+        bytes32 mintRecipient;
+    }
+
     /**********************************************************************************************/
     /*** Constants/state variables                                                              ***/
     /**********************************************************************************************/
 
-    bytes32 internal constant _REENTRANCY_GUARD_SLOT        = bytes32(uint256(0));
+    address internal constant UNISWAP_V3_ROUTER           = 0x2626664c2603336E57B271c5C0b26F421741e481;
+    address internal constant UNISWAP_V3_POSITION_MANAGER = 0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1;
+
+    // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.ReentrancyGuard")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 internal constant _REENTRANCY_GUARD_SLOT        = 0x9b779b17422d0df92223018b32b4d1fa46e071723d6817e2486d003becc55f00;
     bytes32 internal constant _REENTRANCY_GUARD_NOT_ENTERED = bytes32(uint256(1));
     bytes32 internal constant _REENTRANCY_GUARD_ENTERED     = bytes32(uint256(2));
 
-    bytes32 constant DEFAULT_ADMIN_ROLE = 0x00;
+    bytes32 constant ALLOCATOR_ROLE       = keccak256("ALLOCATOR_ROLE");
+    bytes32 constant ALLOCATOR_ADMIN_ROLE = keccak256("ALLOCATOR_ADMIN_ROLE");
+    bytes32 constant DEFAULT_ADMIN_ROLE   = 0x00;
 
-    bytes32 CONTROLLER;
-    bytes32 FREEZER;
-    bytes32 RELAYER;
+    address allocator      = Base.ALM_RELAYER_MULTISIG;
+    address allocatorAdmin = Base.ALM_FREEZER_MULTISIG;
 
-    address freezer = Base.ALM_FREEZER_MULTISIG;
-    address relayer = Base.ALM_RELAYER_MULTISIG;
-
-    address pocket = makeAddr("pocket");
+    address pocket   = makeAddr("pocket");
+    address skyAdmin = makeAddr("skyAdmin");
 
     /**********************************************************************************************/
     /*** Base addresses                                                                         ***/
     /**********************************************************************************************/
 
-    address constant SPARK_EXECUTOR      = Base.SPARK_EXECUTOR;
-    address constant CCTP_MESSENGER_BASE = Base.CCTP_TOKEN_MESSENGER;
-    address constant SSR_ORACLE          = Base.SSR_AUTH_ORACLE;
+    address constant SPARK_EXECUTOR = Base.SPARK_EXECUTOR;
+    address constant SSR_ORACLE     = Base.SSR_AUTH_ORACLE;
 
     /**********************************************************************************************/
     /*** ALM system deployments                                                                 ***/
     /**********************************************************************************************/
 
-    ALMProxy          almProxy;
-    RateLimits        rateLimits;
-    ForeignController foreignController;
+    Beacon                 beacon;
+    IAccessControls        accessControls;
+    IALMProxy              almProxy;
+    IForeignControllerFull foreignController;
+    IRateLimits            rateLimits;
+    PAUFactory             factory;
 
     /**********************************************************************************************/
     /*** Casted addresses for testing                                                           ***/
@@ -101,93 +132,104 @@ abstract contract ForkTestBase is Test {
 
         /*** Step 3: Deploy ALM system ***/
 
-        ControllerInstance memory controllerInst = ForeignControllerDeploy.deployFull({
-            admin : SPARK_EXECUTOR,
-            psm   : address(psmBase),
-            usdc  : Base.USDC,
-            cctp  : CCTP_MESSENGER_BASE
-        });
+        beacon  = new Beacon(skyAdmin);
+        factory = new PAUFactory(address(beacon));
 
-        almProxy          = ALMProxy(payable(controllerInst.almProxy));
-        rateLimits        = RateLimits(controllerInst.rateLimits);
-        foreignController = ForeignController(controllerInst.controller);
+        rateLimits     = IRateLimits(factory.deployRateLimits(SPARK_EXECUTOR));
+        accessControls = IAccessControls(factory.deployAccessControls(SPARK_EXECUTOR));
+        almProxy       = IALMProxy(factory.deployALMProxy(SPARK_EXECUTOR));
 
-        CONTROLLER = almProxy.CONTROLLER();
-        FREEZER    = foreignController.FREEZER();
-        RELAYER    = foreignController.RELAYER();
-
-        /*** Step 3: Configure ALM system through Spark governance (Spark spell payload) ***/
-
-        address[] memory relayers = new address[](1);
-        relayers[0] = relayer;
-
-        Init.ConfigAddressParams memory configAddresses = Init.ConfigAddressParams({
-            freezer       : freezer,
-            relayers      : relayers,
-            oldController : address(0)
-        });
-
-        Init.CheckAddressParams memory checkAddresses = Init.CheckAddressParams({
-            admin : Base.SPARK_EXECUTOR,
-            psm   : address(psmBase),
-            cctp  : Base.CCTP_TOKEN_MESSENGER,
-            usdc  : address(usdcBase),
-            susds : address(susdsBase),
-            usds  : address(usdsBase)
-        });
-
-        Init.MintRecipient[] memory mintRecipients = new Init.MintRecipient[](1);
-
-        mintRecipients[0] = Init.MintRecipient({
-            domain        : CCTPForwarder.DOMAIN_ID_CIRCLE_ETHEREUM,
-            mintRecipient : bytes32(uint256(uint160(makeAddr("ethereumAlmProxy"))))
-        });
-
-        Init.LayerZeroRecipient[] memory layerZeroRecipients = new Init.LayerZeroRecipient[](0);
-
-        Init.MaxSlippageParams[] memory maxSlippageParams = new Init.MaxSlippageParams[](0);
+        foreignController = IForeignControllerFull(
+            payable(factory.deployController(address(accessControls), address(almProxy), address(rateLimits)))
+        );
 
         vm.startPrank(SPARK_EXECUTOR);
 
-        Init.initAlmSystem(
-            controllerInst,
-            configAddresses,
-            checkAddresses,
-            mintRecipients,
-            layerZeroRecipients,
-            maxSlippageParams,
-            true
-        );
+        almProxy.grantRole(almProxy.CONTROLLER(),     address(foreignController));
+        rateLimits.grantRole(rateLimits.CONTROLLER(), address(foreignController));
+
+        vm.stopPrank();
+
+        vm.startPrank(skyAdmin);
+
+        // Facet wiring
+        _wireAaveFacet();
+        _wireERC4626Facet();
+        _wireMerklFacet();
+        _wirePendleFacet();
+        _wirePSM3Facet();
+        _wireSparkVaultFacet();
+        _wireTransferAssetFacet();
+        _wireUniswapV3Facet();
+
+        vm.stopPrank();
+
+        vm.startPrank(SPARK_EXECUTOR);
+
+        accessControls.grantRole(ALLOCATOR_ROLE,       allocator);
+        accessControls.grantRole(ALLOCATOR_ADMIN_ROLE, allocatorAdmin);
+
+        // NOTE: In practice the ALLOCATOR_ADMIN_ROLE will be a wrapper module with custom role
+        //       logic that calls into AccessControls to perform grants and revocations.
+        accessControls.setRoleAdmin(ALLOCATOR_ROLE, ALLOCATOR_ADMIN_ROLE);
+
+        bytes32[] memory integrationIds = new bytes32[](8);
+        integrationIds[0] = "AAVE_FACET";
+        integrationIds[1] = "ERC4626_FACET";
+        integrationIds[2] = "MERKL_FACET";
+        integrationIds[3] = "PENDLE_FACET";
+        integrationIds[4] = "PSM3_FACET";
+        integrationIds[5] = "SPARK_VAULT_FACET";
+        integrationIds[6] = "TRANSFER_ASSET_FACET";
+        integrationIds[7] = "UNISWAP_V3_FACET";
+
+        foreignController.updateIntegrations(integrationIds);
+
+        /*** Step 4: Configure ALM system parameters through Spark governance ***/
 
         uint256 usdcMaxAmount = 5_000_000e6;
         uint256 usdcSlope     = uint256(1_000_000e6) / 4 hours;
         uint256 usdsMaxAmount = 5_000_000e18;
         uint256 usdsSlope     = uint256(1_000_000e18) / 4 hours;
 
-        bytes32 depositKey  = foreignController.LIMIT_PSM_DEPOSIT();
-        bytes32 withdrawKey = foreignController.LIMIT_PSM_WITHDRAW();
-
-        bytes32 domainKeyEthereum = RateLimitHelpers.makeUint32Key(
-            foreignController.LIMIT_USDC_TO_DOMAIN(),
-            CCTPForwarder.DOMAIN_ID_CIRCLE_ETHEREUM
+        // NOTE: Using minimal config for test base setup
+        rateLimits.setRateLimitData(
+            foreignController.psm3_getDepositRateLimitKey(address(usdcBase)),
+            usdcMaxAmount,
+            usdcSlope
         );
 
-        // NOTE: Using minimal config for test base setup
-        rateLimits.setRateLimitData(RateLimitHelpers.makeAddressKey(depositKey,  address(usdcBase)),  usdcMaxAmount, usdcSlope);
-        rateLimits.setRateLimitData(RateLimitHelpers.makeAddressKey(withdrawKey, address(usdcBase)),  usdcMaxAmount, usdcSlope);
-        rateLimits.setRateLimitData(RateLimitHelpers.makeAddressKey(depositKey,  address(usdsBase)),  usdsMaxAmount, usdsSlope);
-        rateLimits.setRateLimitData(RateLimitHelpers.makeAddressKey(depositKey,  address(susdsBase)), usdsMaxAmount, usdsSlope);
-        rateLimits.setRateLimitData(foreignController.LIMIT_USDC_TO_CCTP(),                           usdcMaxAmount, usdcSlope);
-        rateLimits.setRateLimitData(domainKeyEthereum,                                                usdcMaxAmount, usdcSlope);
+        rateLimits.setRateLimitData(
+            foreignController.psm3_getWithdrawRateLimitKey(address(usdcBase)),
+            usdcMaxAmount,
+            usdcSlope
+        );
 
-        rateLimits.setUnlimitedRateLimitData(RateLimitHelpers.makeAddressKey(withdrawKey, address(usdsBase)));
-        rateLimits.setUnlimitedRateLimitData(RateLimitHelpers.makeAddressKey(withdrawKey, address(susdsBase)));
+        rateLimits.setRateLimitData(
+            foreignController.psm3_getDepositRateLimitKey(address(usdsBase)),
+            usdsMaxAmount,
+            usdsSlope
+        );
+
+        rateLimits.setRateLimitData(
+            foreignController.psm3_getDepositRateLimitKey(address(susdsBase)),
+            usdsMaxAmount,
+            usdsSlope
+        );
+
+        rateLimits.setUnlimitedRateLimitData(
+            foreignController.psm3_getWithdrawRateLimitKey(address(usdsBase))
+        );
+
+        rateLimits.setUnlimitedRateLimitData(
+            foreignController.psm3_getWithdrawRateLimitKey(address(susdsBase))
+        );
 
         vm.stopPrank();
     }
 
     // Default configuration for the fork, can be overridden in inheriting tests
-    function _getBlock() internal virtual pure returns (uint256) {
+    function _getBlock() internal pure virtual returns (uint256) {
         return 20782500;  // October 8, 2024
     }
 
@@ -212,6 +254,420 @@ abstract contract ForkTestBase is Test {
 
     function _absSubtraction(uint256 a, uint256 b) internal pure returns (uint256) {
         return a > b ? a - b : b - a;
+    }
+
+    /**********************************************************************************************/
+    /*** Facet wiring helpers                                                                   ***/
+    /**********************************************************************************************/
+
+    function _wireAaveFacet() internal {
+        address aaveFacet = address(new AaveFacet());
+
+        vm.label(aaveFacet, "AaveFacet");
+
+        IEnumerableIntegrations.Wire[] memory wires = new IEnumerableIntegrations.Wire[](7);
+
+        wires[0] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.aave_setMaxSlippage.selector,
+            IAaveFacet.setMaxSlippage.selector
+        );
+
+        wires[1] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.aave_getMaxSlippage.selector,
+            IAaveFacet.getMaxSlippage.selector
+        );
+
+        wires[2] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.aave_deposit.selector,
+            IAaveFacet.deposit.selector
+        );
+
+        wires[3] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.aave_withdraw.selector,
+            IAaveFacet.withdraw.selector
+        );
+
+        wires[4] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.aave_getDepositRateLimitKey.selector,
+            IAaveFacet.getDepositRateLimitKey.selector
+        );
+
+        wires[5] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.aave_getWithdrawRateLimitKey.selector,
+            IAaveFacet.getWithdrawRateLimitKey.selector
+        );
+
+        wires[6] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.aave_VERSION.selector,
+            IFacet.VERSION.selector
+        );
+
+        IEnumerableIntegrations.Config memory config = IEnumerableIntegrations.Config({
+            facet : aaveFacet,
+            wires : wires
+        });
+
+        beacon.setIntegration("AAVE_FACET", config);
+    }
+
+    function _wireERC4626Facet() internal {
+        address erc4626Facet = address(new ERC4626Facet());
+
+        vm.label(erc4626Facet, "ERC4626Facet");
+
+        IEnumerableIntegrations.Wire[] memory wires = new IEnumerableIntegrations.Wire[](9);
+
+        wires[0] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.erc4626_setMaxExchangeRate.selector,
+            IERC4626Facet.setMaxExchangeRate.selector
+        );
+
+        wires[1] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.erc4626_deposit.selector,
+            IERC4626Facet.deposit.selector
+        );
+
+        wires[2] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.erc4626_withdraw.selector,
+            IERC4626Facet.withdraw.selector
+        );
+
+        wires[3] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.erc4626_redeem.selector,
+            IERC4626Facet.redeem.selector
+        );
+
+        wires[4] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.erc4626_EXCHANGE_RATE_PRECISION.selector,
+            IERC4626Facet.EXCHANGE_RATE_PRECISION.selector
+        );
+
+        wires[5] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.erc4626_getMaxExchangeRate.selector,
+            IERC4626Facet.getMaxExchangeRate.selector
+        );
+
+        wires[6] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.erc4626_getDepositRateLimitKey.selector,
+            IERC4626Facet.getDepositRateLimitKey.selector
+        );
+
+        wires[7] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.erc4626_getWithdrawRateLimitKey.selector,
+            IERC4626Facet.getWithdrawRateLimitKey.selector
+        );
+
+        wires[8] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.erc4626_VERSION.selector,
+            IFacet.VERSION.selector
+        );
+
+        IEnumerableIntegrations.Config memory config = IEnumerableIntegrations.Config({
+            facet : erc4626Facet,
+            wires : wires
+        });
+
+        beacon.setIntegration("ERC4626_FACET", config);
+    }
+
+    function _wireMerklFacet() internal {
+        address merklFacet = address(new MerklFacet());
+
+        vm.label(merklFacet, "MerklFacet");
+
+        IEnumerableIntegrations.Wire[] memory merklWires = new IEnumerableIntegrations.Wire[](3);
+
+        merklWires[0] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.merkl_toggleOperator.selector,
+            IMerklFacet.toggleOperator.selector
+        );
+
+        merklWires[1] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.merkl_getToggleOperatorRateLimitKey.selector,
+            IMerklFacet.getToggleOperatorRateLimitKey.selector
+        );
+
+        merklWires[2] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.merkl_VERSION.selector,
+            IFacet.VERSION.selector
+        );
+
+        IEnumerableIntegrations.Config memory config = IEnumerableIntegrations.Config({
+            facet : merklFacet,
+            wires : merklWires
+        });
+
+        beacon.setIntegration("MERKL_FACET", config);
+    }
+
+    function _wirePendleFacet() internal {
+        address pendleFacet = address(new PendleFacet(GroveBase.PENDLE_ROUTER));
+
+        vm.label(pendleFacet, "PendleFacet");
+
+        IEnumerableIntegrations.Wire[] memory wires = new IEnumerableIntegrations.Wire[](4);
+
+        wires[0] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.pendle_redeem.selector,
+            IPendleFacet.redeem.selector
+        );
+
+        wires[1] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.pendle_getRedeemRateLimitKey.selector,
+            IPendleFacet.getRedeemRateLimitKey.selector
+        );
+
+        wires[2] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.pendle_VERSION.selector,
+            IFacet.VERSION.selector
+        );
+
+        wires[3] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.pendle_router.selector,
+            IPendleFacet.router.selector
+        );
+
+        IEnumerableIntegrations.Config memory config = IEnumerableIntegrations.Config({
+            facet : pendleFacet,
+            wires : wires
+        });
+
+        beacon.setIntegration("PENDLE_FACET", config);
+    }
+
+    function _wirePSM3Facet() internal {
+        address psm3Facet = address(new PSM3Facet(address(psmBase)));
+
+        vm.label(psm3Facet, "PSM3Facet");
+
+        IEnumerableIntegrations.Wire[] memory wires = new IEnumerableIntegrations.Wire[](6);
+
+        wires[0] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.psm3_deposit.selector,
+            IPSM3Facet.deposit.selector
+        );
+
+        wires[1] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.psm3_withdraw.selector,
+            IPSM3Facet.withdraw.selector
+        );
+
+        wires[2] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.psm3_getDepositRateLimitKey.selector,
+            IPSM3Facet.getDepositRateLimitKey.selector
+        );
+
+        wires[3] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.psm3_getWithdrawRateLimitKey.selector,
+            IPSM3Facet.getWithdrawRateLimitKey.selector
+        );
+
+        wires[4] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.psm3_VERSION.selector,
+            IFacet.VERSION.selector
+        );
+
+        wires[5] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.psm3_psm.selector,
+            IPSM3Facet.psm.selector
+        );
+
+        IEnumerableIntegrations.Config memory config = IEnumerableIntegrations.Config({
+            facet : psm3Facet,
+            wires : wires
+        });
+
+        beacon.setIntegration("PSM3_FACET", config);
+    }
+
+    function _wireSparkVaultFacet() internal {
+        address sparkVaultFacet = address(new SparkVaultFacet());
+
+        vm.label(sparkVaultFacet, "SparkVaultFacet");
+
+        IEnumerableIntegrations.Wire[] memory wires = new IEnumerableIntegrations.Wire[](3);
+
+        wires[0] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.sparkVault_take.selector,
+            ISparkVaultFacet.take.selector
+        );
+
+        wires[1] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.sparkVault_getTakeRateLimitKey.selector,
+            ISparkVaultFacet.getTakeRateLimitKey.selector
+        );
+
+        wires[2] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.sparkVault_VERSION.selector,
+            IFacet.VERSION.selector
+        );
+
+        IEnumerableIntegrations.Config memory config = IEnumerableIntegrations.Config({
+            facet : sparkVaultFacet,
+            wires : wires
+        });
+
+        beacon.setIntegration("SPARK_VAULT_FACET", config);
+    }
+
+    function _wireTransferAssetFacet() internal {
+        address transferAssetFacet = address(new TransferAssetFacet());
+
+        vm.label(transferAssetFacet, "TransferAssetFacet");
+
+        IEnumerableIntegrations.Wire[] memory wires = new IEnumerableIntegrations.Wire[](3);
+
+        wires[0] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.transferAsset_transfer.selector,
+            ITransferAssetFacet.transfer.selector
+        );
+
+        wires[1] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.transferAsset_getTransferRateLimitKey.selector,
+            ITransferAssetFacet.getTransferRateLimitKey.selector
+        );
+
+        wires[2] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.transferAsset_VERSION.selector,
+            IFacet.VERSION.selector
+        );
+
+        IEnumerableIntegrations.Config memory config = IEnumerableIntegrations.Config({
+            facet : transferAssetFacet,
+            wires : wires
+        });
+
+        beacon.setIntegration("TRANSFER_ASSET_FACET", config);
+    }
+
+    function _wireUniswapV3Facet() internal {
+        address uniswapV3Facet = address(new UniswapV3Facet(UNISWAP_V3_POSITION_MANAGER, UNISWAP_V3_ROUTER));
+
+        vm.label(uniswapV3Facet, "UniswapV3Facet");
+
+        IEnumerableIntegrations.Wire[] memory wires = new IEnumerableIntegrations.Wire[](23);
+
+        wires[0] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.uniswapV3_setMaxSlippage.selector,
+            IUniswapV3Facet.setMaxSlippage.selector
+        );
+
+        wires[1] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.uniswapV3_setMaxTickDelta.selector,
+            IUniswapV3Facet.setMaxTickDelta.selector
+        );
+
+        wires[2] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.uniswapV3_setLiquidityLowerTickBound.selector,
+            IUniswapV3Facet.setLiquidityLowerTickBound.selector
+        );
+
+        wires[3] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.uniswapV3_setLiquidityUpperTickBound.selector,
+            IUniswapV3Facet.setLiquidityUpperTickBound.selector
+        );
+
+        wires[4] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.uniswapV3_setTWAPSecondsAgo.selector,
+            IUniswapV3Facet.setTWAPSecondsAgo.selector
+        );
+
+        wires[5] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.uniswapV3_swap.selector,
+            IUniswapV3Facet.swap.selector
+        );
+
+        wires[6] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.uniswapV3_addLiquidity.selector,
+            IUniswapV3Facet.addLiquidity.selector
+        );
+
+        wires[7] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.uniswapV3_removeLiquidity.selector,
+            IUniswapV3Facet.removeLiquidity.selector
+        );
+
+        wires[8] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.uniswapV3_getMaxSlippage.selector,
+            IUniswapV3Facet.getMaxSlippage.selector
+        );
+
+        wires[9] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.uniswapV3_getMaxTickDelta.selector,
+            IUniswapV3Facet.getMaxTickDelta.selector
+        );
+
+        wires[10] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.uniswapV3_getLiquidityTickBounds.selector,
+            IUniswapV3Facet.getLiquidityTickBounds.selector
+        );
+
+        wires[11] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.uniswapV3_getTWAPSecondsAgo.selector,
+            IUniswapV3Facet.getTWAPSecondsAgo.selector
+        );
+
+        wires[12] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.uniswapV3_getAggregateDepositRateLimitKey.selector,
+            IUniswapV3Facet.getAggregateDepositRateLimitKey.selector
+        );
+
+        wires[13] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.uniswapV3_getAssetDepositRateLimitKey.selector,
+            IUniswapV3Facet.getAssetDepositRateLimitKey.selector
+        );
+
+        wires[14] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.uniswapV3_getSwapRateLimitKey.selector,
+            IUniswapV3Facet.getSwapRateLimitKey.selector
+        );
+
+        wires[15] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.uniswapV3_getAggregateWithdrawRateLimitKey.selector,
+            IUniswapV3Facet.getAggregateWithdrawRateLimitKey.selector
+        );
+
+        wires[16] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.uniswapV3_getAssetWithdrawRateLimitKey.selector,
+            IUniswapV3Facet.getAssetWithdrawRateLimitKey.selector
+        );
+
+        wires[17] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.uniswapV3_VERSION.selector,
+            IFacet.VERSION.selector
+        );
+
+        wires[18] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.uniswapV3_MAX_TICK_DELTA.selector,
+            IUniswapV3Facet.MAX_TICK_DELTA.selector
+        );
+
+        wires[19] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.uniswapV3_MIN_TICK.selector,
+            IUniswapV3Facet.MIN_TICK.selector
+        );
+
+        wires[20] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.uniswapV3_MAX_TICK.selector,
+            IUniswapV3Facet.MAX_TICK.selector
+        );
+
+        wires[21] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.uniswapV3_positionManager.selector,
+            IUniswapV3Facet.positionManager.selector
+        );
+
+        wires[22] = IEnumerableIntegrations.Wire(
+            IForeignControllerFull.uniswapV3_router.selector,
+            IUniswapV3Facet.router.selector
+        );
+
+        IEnumerableIntegrations.Config memory config = IEnumerableIntegrations.Config({
+            facet : uniswapV3Facet,
+            wires : wires
+        });
+
+        beacon.setIntegration("UNISWAP_V3_FACET", config);
     }
 
 }

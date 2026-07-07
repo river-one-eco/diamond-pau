@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity ^0.8.21;
+pragma solidity ^0.8.34;
 
 import { RateLimits, IRateLimits } from "../../../src/RateLimits.sol";
 
@@ -40,9 +40,9 @@ abstract contract RateLimits_TestBase is UnitTestBase {
         // Deploy the RateLimits contract with `admin` as the initial admin
         rateLimits = new RateLimits(admin);
 
-        // Grant the CONTROLLER role to the `controller` address
+        // Grant the CONTROLLER_ROLE to the `controller` address
         vm.prank(admin);
-        rateLimits.grantRole(CONTROLLER, controller);
+        rateLimits.grantRole(CONTROLLER_ROLE, controller);
     }
 
     function _assertLimitData(
@@ -65,6 +65,11 @@ abstract contract RateLimits_TestBase is UnitTestBase {
 }
 
 contract RateLimits_Constructor_Tests is RateLimits_TestBase {
+
+    function test_constructor_zeroAdmin() external {
+        vm.expectRevert(IRateLimits.ZeroAdmin.selector);
+        new RateLimits(address(0));
+    }
 
     function test_constructor() public {
         rateLimits = new RateLimits(admin);
@@ -384,7 +389,7 @@ contract RateLimits_TriggerRateLimitDecrease_Tests is RateLimits_TestBase {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            CONTROLLER
+            CONTROLLER_ROLE
         ));
         rateLimits.triggerRateLimitDecrease(TEST_KEY1, 100);
 
@@ -392,7 +397,7 @@ contract RateLimits_TriggerRateLimitDecrease_Tests is RateLimits_TestBase {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             admin,
-            CONTROLLER
+            CONTROLLER_ROLE
         ));
         rateLimits.triggerRateLimitDecrease(TEST_KEY1, 100);
     }
@@ -514,7 +519,12 @@ contract RateLimits_TriggerRateLimitDecrease_Tests is RateLimits_TestBase {
         assertEq(rateLimits.getCurrentRateLimit(TEST_KEY1), 1_000_000e18 - dust);
 
         vm.expectEmit(address(rateLimits));
-        emit RateLimitDecreaseTriggered(TEST_KEY1, 250_000e18, 1_000_000e18 - dust, 750_000e18 - dust);
+        emit RateLimitDecreaseTriggered(
+            TEST_KEY1,
+            250_000e18,
+            1_000_000e18 - dust,
+            750_000e18 - dust
+        );
         uint256 resultingLimit = rateLimits.triggerRateLimitDecrease(TEST_KEY1, 250_000e18);
 
         assertEq(resultingLimit, 750_000e18 - dust);
@@ -702,7 +712,7 @@ contract RateLimits_TriggerRateLimitIncrease_Tests is RateLimits_TestBase {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             address(this),
-            CONTROLLER
+            CONTROLLER_ROLE
         ));
         rateLimits.triggerRateLimitIncrease(TEST_KEY1, 100);
 
@@ -710,7 +720,7 @@ contract RateLimits_TriggerRateLimitIncrease_Tests is RateLimits_TestBase {
         vm.expectRevert(abi.encodeWithSignature(
             "AccessControlUnauthorizedAccount(address,bytes32)",
             admin,
-            CONTROLLER
+            CONTROLLER_ROLE
         ));
         rateLimits.triggerRateLimitIncrease(TEST_KEY1, 100);
     }

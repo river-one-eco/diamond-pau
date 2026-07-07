@@ -1,17 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity ^0.8.21;
+pragma solidity ^0.8.34;
 
 import { MarketParamsLib } from "../../lib/metamorpho/lib/morpho-blue/src/libraries/MarketParamsLib.sol";
 
 import { Ethereum } from "../../lib/spark-address-registry/src/Ethereum.sol";
 
-import { makeAddressKey } from "../../src/RateLimitHelpers.sol";
-
 import { IMetaMorphoLike, IMorphoLike, Id, Market, MarketParams } from "../interfaces/Morpho.sol";
 
 import { ForkTestBase } from "./ForkTestBase.t.sol";
 
-abstract contract ERC4626DonationAttack_TestBase is ForkTestBase {
+abstract contract ERC4626_DonationAttack_TestBase is ForkTestBase {
 
     IMetaMorphoLike internal constant MORPHO_VAULT = IMetaMorphoLike(0xe41a0583334f0dc4E023Acd0bFef3667F6FE0597);
 
@@ -27,21 +25,20 @@ abstract contract ERC4626DonationAttack_TestBase is ForkTestBase {
 
     Id internal marketId = MarketParamsLib.id(marketParams);
 
-    address internal curator       = makeAddr("curator");
-    address internal guardian      = makeAddr("guardian");
-    address internal feeRecipient  = makeAddr("feeRecipient");
-    address internal allocator     = makeAddr("allocator");
-    address internal skimRecipient = makeAddr("skimRecipient");
+    address internal attacker        = makeAddr("attacker");
+    address internal curator         = makeAddr("curator");
+    address internal feeRecipient    = makeAddr("feeRecipient");
+    address internal guardian        = makeAddr("guardian");
+    address internal morphoAllocator = makeAddr("morphoAllocator");
+    address internal skimRecipient   = makeAddr("skimRecipient");
 
-    address internal attacker = makeAddr("attacker");
-
-    function setUp() override public {
+    function setUp() public override {
         super.setUp();
 
         morpho = MORPHO_VAULT.MORPHO();
 
-        bytes32 depositKey  = makeAddressKey(mainnetController.LIMIT_4626_DEPOSIT(),  address(MORPHO_VAULT));
-        bytes32 withdrawKey = makeAddressKey(mainnetController.LIMIT_4626_WITHDRAW(), address(MORPHO_VAULT));
+        bytes32 depositKey  = mainnetController.erc4626_getDepositRateLimitKey(address(MORPHO_VAULT), Ethereum.USDS);
+        bytes32 withdrawKey = mainnetController.erc4626_getWithdrawRateLimitKey(address(MORPHO_VAULT));
 
         // Basic validation
         assertEq(keccak256(abi.encode(MORPHO_VAULT.symbol())), keccak256(abi.encode("sparkUSDS")));
@@ -54,7 +51,7 @@ abstract contract ERC4626DonationAttack_TestBase is ForkTestBase {
         MORPHO_VAULT.setCurator(curator);
         MORPHO_VAULT.submitGuardian(guardian);
         MORPHO_VAULT.setFeeRecipient(feeRecipient);
-        MORPHO_VAULT.setIsAllocator(allocator, true);
+        MORPHO_VAULT.setIsAllocator(morphoAllocator, true);
         MORPHO_VAULT.setSkimRecipient(skimRecipient);
 
         MORPHO_VAULT.submitCap(marketParams, 10_000_000e18);
@@ -72,7 +69,7 @@ abstract contract ERC4626DonationAttack_TestBase is ForkTestBase {
         assertEq(MORPHO_VAULT.guardian(),     guardian);
         assertEq(MORPHO_VAULT.feeRecipient(), feeRecipient);
 
-        assertTrue(MORPHO_VAULT.isAllocator(allocator));
+        assertTrue(MORPHO_VAULT.isAllocator(morphoAllocator));
 
         vm.startPrank(Ethereum.SPARK_PROXY);
         rateLimits.setRateLimitData(depositKey,  5_000_000e18, uint256(1_000_000e18) / 4 hours);
@@ -80,36 +77,36 @@ abstract contract ERC4626DonationAttack_TestBase is ForkTestBase {
         vm.stopPrank();
     }
 
-    function _getBlock() internal override pure returns (uint256) {
+    function _getBlock() internal pure override returns (uint256) {
         return 22932160;  // July 16, 2025
     }
 
 }
 
-contract MainnetController_ERC4626_DonationAttack_Tests is ERC4626DonationAttack_TestBase {
+contract MainnetController_ERC4626_DonationAttack_Tests is ERC4626_DonationAttack_TestBase {
 
     function test_depositERC4626_donationAttackFailure() external {
         vm.startPrank(Ethereum.SPARK_PROXY);
-        mainnetController.setMaxExchangeRate(address(MORPHO_VAULT), 1e18, 10e18);
+        mainnetController.erc4626_setMaxExchangeRate(address(MORPHO_VAULT), 1e18, 10e18);
         vm.stopPrank();
 
         _doAttack();
 
-        vm.prank(relayer);
-        vm.expectRevert("ERC4626Lib/exchange-rate-too-high");
-        mainnetController.depositERC4626(address(MORPHO_VAULT), 2_000_000e18, 0);
+        vm.prank(allocator);
+        vm.expectRevert("ERC4626Facet/exchange-rate-too-high");
+        mainnetController.erc4626_deposit(address(MORPHO_VAULT), 2_000_000e18, 0);
     }
 
     function test_depositERC4626_donationAttackSuccess() external {
         // Set max exchange rate too high
         vm.startPrank(Ethereum.SPARK_PROXY);
-        mainnetController.setMaxExchangeRate(address(MORPHO_VAULT), 1, MORPHO_VAULT.convertToAssets(1e24));
+        mainnetController.erc4626_setMaxExchangeRate(address(MORPHO_VAULT), 1, MORPHO_VAULT.convertToAssets(1e24));
         vm.stopPrank();
 
         _doAttack();
 
-        vm.prank(relayer);
-        uint256 shares = mainnetController.depositERC4626(address(MORPHO_VAULT), 2_000_000e18, 0);
+        vm.prank(allocator);
+        uint256 shares = mainnetController.erc4626_deposit(address(MORPHO_VAULT), 2_000_000e18, 0);
 
         // One can compute:
         // shares == assets * (totalSupply + 1) / (totalAssets + 1)

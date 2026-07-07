@@ -1,29 +1,29 @@
 # Security
 
-This document describes protocol-specific security considerations for Diamond PAU.
+This document describes protocol-specific security considerations for PAU.
 
 ## Trust Assumptions
 
 ### Role Trust Levels
 
-| Role                 | Trust Level               | Description                                                                                                       |
-| -------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `DEFAULT_ADMIN_ROLE` | **Fully trusted**         | Run by governance                                                                                                 |
-| `RELAYER`            | **Assumed compromisable** | Logic must prevent unauthorized value movement. This should be a major consideration during auditing engagements. |
-| `FREEZER`            | Trusted                   | Can stop compromised relayers via `removeRelayer`                                                                 |
+| Role                 | Trust Level               | Description                                                                                                                                                                                    |
+| -------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DEFAULT_ADMIN_ROLE` | **Fully trusted**         | Run by governance                                                                                                                                                                              |
+| `ALLOCATOR_ROLE`     | **Assumed compromisable** | Logic must prevent unauthorized value movement. This should be a major consideration during auditing engagements.                                                                              |
+| Allocator role admin | Trusted                   | The role (or module holding the role) that governance sets as the admin of `ALLOCATOR_ROLE`. Can grant and revoke `ALLOCATOR_ROLE`, including emergency revocation of a compromised allocator. |
 
-### Relayer Compromise Mitigations
+### Allocator Compromise Mitigations
 
-When assuming a compromised `RELAYER`:
+When assuming a compromised `ALLOCATOR`:
 
-1. **Value movement restrictions:** Smart contract logic must prevent movement of value outside the Diamond PAU system of contracts
-   - Exception: Asynchronous integrations (e.g., BUIDL) where `transferAsset` sends funds to whitelisted addresses, with LP tokens minted asynchronously, or OTC trades.
+1. **Value movement restrictions:** Smart contract logic must prevent movement of value outside the PAU system of contracts
+    - Exception: Asynchronous integrations (e.g., BUIDL) where `transferAsset` sends funds to whitelisted addresses, with LP tokens minted asynchronously, or OTC trades.
 
 2. **Loss limitations:** Any action must be limited to "reasonable" slippage/losses/opportunity cost by rate limits
 
-3. **Emergency response:** The `FREEZER` must be able to stop harmful actions within max rate limits using `removeRelayer`
+3. **Emergency response:** The allocator role admin must be able to stop harmful actions within max rate limits by revoking `ALLOCATOR_ROLE` from the compromised account
 
-4. **DOS attacks:** A compromised relayer can perform DOS attacks. Recovery procedures are outlined in `Attacks.t.sol` test files.
+4. **DOS attacks:** A compromised allocator can perform DOS attacks. Recovery procedures are outlined in `Attacks.t.sol` test files.
 
 For comprehensive threat modeling, attack vectors, and trust assumptions, see [Threat Model](./THREAT_MODEL.md).
 
@@ -35,9 +35,9 @@ For comprehensive threat modeling, attack vectors, and trust assumptions, see [T
 
 **Trust Assumption:** Ethena is a trusted counterparty in this system.
 
-**Scenario:** An operation initiated by a relayer can continue after a freeze is performed.
+**Scenario:** An operation initiated by an allocator can continue after the allocator is revoked.
 
-**Implication:** If the `FREEZER` role removes a relayer while an Ethena mint/burn operation is pending, that operation will still complete.
+**Implication:** If the allocator role admin revokes `ALLOCATOR_ROLE` from an allocator while an Ethena mint/burn operation is pending, that operation will still complete.
 
 **Rationale:**
 
@@ -46,7 +46,7 @@ For comprehensive threat modeling, attack vectors, and trust assumptions, see [T
 - Ethena's API [Order Validity Checks](https://docs.ethena.fi/solution-design/minting-usde/order-validity-checks) provide protection against malicious delegated signers
 - Worst-case loss is bounded by slippage limits and rate limits on the operation
 
-**Security Note:** The delegated signer role can technically be set by a compromised relayer. Ethena's off-chain validation is trusted to prevent abuse in this scenario.
+**Security Note:** The delegated signer role can technically be set by a compromised allocator. Ethena's off-chain validation is trusted to prevent abuse in this scenario.
 
 ### EtherFi/weETH Integration
 
@@ -66,7 +66,9 @@ See [Liquidity Operations](./LIQUIDITY_OPERATIONS.md) for OTC mechanics.
 
 ### Centrifuge Integration
 
-**Architecture Note:** Cancel/Claim paths will be blocked if deposit rate limit is set to zero. To circumvent this the rate limit would be set to 1 so that cancel and claim can be used.
+**Architecture Note:** Each Centrifuge cancel and claim-cancel path is gated by its own dedicated rate-limit key, each presence-checked via `_requireRateLimitExists`. Every key must be configured by governance before the corresponding path can be used.
+
+**Security Node:** If a cancel key is set but its matching claim-cancel key is not, `cancel*Request` will succeed and `claimCancel*Request` will then revert. Because Centrifuge requests use `REQUEST_ID = 0`, no new deposit or redeem request can be submitted while a cancellation is pending, so the integration stays stuck until governance configures the missing claim-cancel key.
 
 ---
 
@@ -76,10 +78,11 @@ See [Liquidity Operations](./LIQUIDITY_OPERATIONS.md) for OTC mechanics.
 
 **Guarantee:** Any ETH left in the `ALMProxy` can always be removed.
 
-| Method            | Access                            | Description                                                  |
-| ----------------- | --------------------------------- | ------------------------------------------------------------ |
-| `doCallWithValue` | `DEFAULT_ADMIN_ROLE` (governance) | Allows arbitrary calls with ETH value attached from ALMProxy |
-| `wrapAllProxyETH` | `RELAYER`                         | Wraps all ETH in ALMProxy to WETH (MainnetController only)   |
+| Method                              | Access       | Description                                                              |
+| ----------------------------------- | ------------ | ------------------------------------------------------------------------ |
+| `ALMProxy.doCallWithValue`          | `CONTROLLER` | Allows arbitrary calls with ETH value attached from `ALMProxy`.          |
+| `ALMProxyFreezable.doCallWithValue` | `ALLOCATOR`  | Allows arbitrary calls with ETH value attached from `ALMProxyFreezable`. |
+| `WrapProxyETHFacet.wrapAll`         | `ALLOCATOR`  | Wraps all ETH in `ALMProxy` to WETH.                                     |
 
 **Use Cases:**
 
@@ -88,7 +91,12 @@ See [Liquidity Operations](./LIQUIDITY_OPERATIONS.md) for OTC mechanics.
 - Convert ETH to WETH for standard token handling
 - Emergency fund extraction
 
-**Security:** The `doCallWithValue` function is governance-controlled and does not introduce attack vectors for compromised relayers. The `wrapAllProxyETH` function is relayer-accessible but only converts ETH to WETH within the ALMProxy, keeping funds in the system.
+**Security:**
+
+- `ALMProxy.doCallWithValue` is gated by the `CONTROLLER` role, which is held only by the `Controller` contract. A compromised allocator can therefore only reach this function indirectly through facets wired into the `Controller`, where rate limits and per-facet logic apply.
+- `ALMProxyFreezable.doCallWithValue` is gated by the `RELAYER` role directly and is callable by a compromised relayer. `ALMProxyFreezable` is not intended to hold funds, and the `FREEZER` role can revoke a compromised relayer via `removeRelayer` to halt further calls.
+- Facet functionality gated by the `ALLOCATOR_ROLE` is protected by rate limits and other safeguards.
+- `wrapAll` is accessible to allocators but only converts ETH to WETH within the `ALMProxy`, keeping funds in the system.
 
 ---
 
@@ -101,7 +109,7 @@ See [Liquidity Operations](./LIQUIDITY_OPERATIONS.md) for OTC mechanics.
 **Rationale:**
 
 - Gas fees are operational costs, not security vulnerabilities
-- Gas fee griefing by a compromised relayer is bounded by block production and MEV considerations
+- Gas fee griefing by a compromised allocator is bounded by block production and MEV considerations
 - Economic impact is minimal compared to rate-limited capital protection
 
 **Implication:** Audits should focus on capital preservation and rate limit effectiveness.
@@ -112,6 +120,10 @@ See [Liquidity Operations](./LIQUIDITY_OPERATIONS.md) for OTC mechanics.
 
 For detailed operational requirements including seeding, configuration, and onboarding checklists, see [Operational Requirements](./OPERATIONAL_REQUIREMENTS.md).
 
+### Beacon Governance Surface
+
+The Beacon manages all integration configurations (facet addresses and selector wiring) for every Controller that references it. Only the `DEFAULT_ADMIN_ROLE` on the Beacon can call `setIntegration` or `removeIntegration`. This is a critical security boundary: if a malicious integration were configured, the facet would gain arbitrary access to Controller storage and ALMProxy funds via `delegatecall`. The Beacon validates that facet addresses are non-zero and have deployed code, and protects hardcoded selectors from being overwritten. Auditors should verify that no path exists to bypass these validations, and that the admin-only gate on integration management cannot be circumvented.
+
 ---
 
 ## Audits
@@ -121,5 +133,6 @@ Audit reports are available in the [`audits/`](../audits/) directory. The system
 - Cantina
 - ChainSecurity
 - Certora
+- Unvariant
 
 Each version release includes corresponding audit reports from these security firms.

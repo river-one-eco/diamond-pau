@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity >=0.8.0;
+pragma solidity ^0.8.34;
 
 interface IERC20Like {
 
@@ -9,7 +9,7 @@ interface IERC20Like {
 
 }
 
-interface IERC4626Like is IERC20Like{
+interface IERC4626Like is IERC20Like {
 
     function convertToAssets(uint256 shares) external view returns (uint256 assets);
 

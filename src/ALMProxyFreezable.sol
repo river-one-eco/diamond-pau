@@ -1,23 +1,69 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-pragma solidity ^0.8.21;
+pragma solidity ^0.8.34;
 
-import { ALMProxy } from "./ALMProxy.sol";
+import { AccessControl } from "../lib/openzeppelin-contracts/contracts/access/AccessControl.sol";
+import { Address }       from "../lib/openzeppelin-contracts/contracts/utils/Address.sol";
 
-contract ALMProxyFreezable is ALMProxy {
+import { IALMProxyFreezable } from "./interfaces/IALMProxyFreezable.sol";
 
-    event ControllerRemoved(address indexed controller);
+contract ALMProxyFreezable is IALMProxyFreezable, AccessControl {
 
-    bytes32 public constant FREEZER = keccak256("FREEZER");
-
-    constructor(address admin) ALMProxy(admin) {}
+    using Address for address;
 
     /**********************************************************************************************/
-    /*** Call functions                                                                         ***/
+    /*** Constants                                                                              ***/
     /**********************************************************************************************/
 
-    function removeController(address controller) external onlyRole(FREEZER) {
-        _revokeRole(CONTROLLER, controller);
-        emit ControllerRemoved(controller);
+    bytes32 public constant override ALLOCATOR_ROLE = keccak256("ALLOCATOR_ROLE");
+    bytes32 public constant override FREEZER_ROLE   = keccak256("FREEZER_ROLE");
+
+    /**********************************************************************************************/
+    /*** Constructor                                                                            ***/
+    /**********************************************************************************************/
+
+    constructor(address admin) {
+        require(admin != address(0), ZeroAdmin());
+
+        _grantRole(DEFAULT_ADMIN_ROLE, admin);
     }
+
+    /**********************************************************************************************/
+    /*** External Interactive Freezer Functions                                                 ***/
+    /**********************************************************************************************/
+
+    function removeAllocator(address allocator) external override onlyRole(FREEZER_ROLE) {
+        require(_revokeRole(ALLOCATOR_ROLE, allocator), "ALMProxyFreezable/not-live-allocator");
+
+        emit AllocatorRemoved(allocator);
+    }
+
+    /**********************************************************************************************/
+    /*** External Interactive Allocator Functions                                               ***/
+    /**********************************************************************************************/
+
+    function doCall(address target, bytes calldata data)
+        external
+        override
+        onlyRole(ALLOCATOR_ROLE)
+        returns (bytes memory result)
+    {
+        result = target.functionCall(data);
+    }
+
+    function doCallWithValue(address target, bytes calldata data, uint256 value)
+        external
+        payable
+        override
+        onlyRole(ALLOCATOR_ROLE)
+        returns (bytes memory result)
+    {
+        result = target.functionCallWithValue(data, value);
+    }
+
+    /**********************************************************************************************/
+    /*** Receive function                                                                       ***/
+    /**********************************************************************************************/
+
+    receive() external payable {}
 
 }

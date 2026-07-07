@@ -48,3 +48,9 @@
 	path = lib/grove-xchain-helpers
 	url = https://github.com/grove-labs/xchain-helpers
 	branch = master
+[submodule "lib/grove-basin"]
+	path = lib/grove-basin
+	url = https://github.com/grove-labs/grove-basin
+[submodule "lib/nfat"]
+	path = lib/nfat
+	url = https://github.com/sky-ecosystem/nfat
