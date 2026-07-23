@@ -62,8 +62,6 @@ contract AaveV4Facet is IAaveV4Facet, Facet {
     struct FacetStorage {
         // 1e18 precision, keyed per market so each asset on a spoke gets its own tolerance.
         mapping (address spoke => mapping (uint256 reserveId => uint256 maxSlippage)) maxSlippages;
-        // RAY (1e27) precision deficit tolerance, keyed per market. Default 0 blocks any deficit.
-        mapping (address spoke => mapping (uint256 reserveId => uint256 maxDeficit)) maxDeficits;
     }
 
     // keccak256(abi.encode(uint256(keccak256("sky.pau.storage.AaveV4Facet.v1")) - 1)) & ~bytes32(uint256(0xff))
@@ -105,20 +103,6 @@ contract AaveV4Facet is IAaveV4Facet, Facet {
         emit AaveV4MaxSlippageSet(spoke, reserveId, maxSlippage);
     }
 
-    /// @inheritdoc IAaveV4Facet
-    function setMaxDeficit(address spoke, uint256 reserveId, uint256 maxDeficit)
-        external
-        override
-        nonReentrant
-        onlyRole(DEFAULT_ADMIN_ROLE)
-    {
-        require(spoke != address(0), "AaveV4Facet/spoke-zero-address");
-
-        _getFacetStorage().maxDeficits[spoke][reserveId] = maxDeficit;
-
-        emit AaveV4MaxDeficitSet(spoke, reserveId, maxDeficit);
-    }
-
     /**********************************************************************************************/
     /*** External Interactive Allocator Functions                                               ***/
     /**********************************************************************************************/
@@ -139,11 +123,10 @@ contract AaveV4Facet is IAaveV4Facet, Facet {
         IAaveV4SpokeLike.Reserve memory reserve = IAaveV4SpokeLike(spoke).getReserve(reserveId);
         address underlying = reserve.underlying;
 
-        // Block deposits when the Hub asset carries a deficit above the configured tolerance
-        // (default 0): supplying against unbacked debt would buy into the pool at par.
+        // Block deposits when the Hub asset carries any deficit: supplying against unbacked debt
+        // would buy into the pool at par.
         require(
-            IAaveV4HubLike(reserve.hub).getAssetDeficitRay(reserve.assetId)
-                <= _getFacetStorage().maxDeficits[spoke][reserveId],
+            IAaveV4HubLike(reserve.hub).getAssetDeficitRay(reserve.assetId) == 0,
             "AaveV4Facet/asset-deficit"
         );
 
@@ -213,16 +196,6 @@ contract AaveV4Facet is IAaveV4Facet, Facet {
         returns (uint256)
     {
         return _getFacetStorage().maxSlippages[spoke][reserveId];
-    }
-
-    /// @inheritdoc IAaveV4Facet
-    function getMaxDeficit(address spoke, uint256 reserveId)
-        external
-        view
-        override
-        returns (uint256)
-    {
-        return _getFacetStorage().maxDeficits[spoke][reserveId];
     }
 
     /// @inheritdoc IAaveV4Facet

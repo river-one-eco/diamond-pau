@@ -189,21 +189,20 @@ contract MainnetController_AaveV4_Deposit_Tests is AaveV4_TestBase {
     function test_depositAaveV4_assetDeficit() external {
         deal(Ethereum.USDC, address(almProxy), USDC_DEPOSIT_AMOUNT);
 
-        // Simulate an outstanding Hub deficit for USDC (assetId 5).
+        // Simulate an outstanding Hub deficit for USDC (assetId 5): any deficit blocks the deposit.
         vm.mockCall(
             CORE_HUB,
             abi.encodeWithSelector(IAaveV4Hub.getAssetDeficitRay.selector, USDC_ASSET_ID),
             abi.encode(uint256(1))
         );
 
-        // Default tolerance is 0, so any deficit blocks the deposit.
         vm.expectRevert("AaveV4Facet/asset-deficit");
         vm.prank(allocator);
         mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
 
-        // Admin raises the tolerance to cover the deficit; the deposit then proceeds.
-        vm.prank(Ethereum.SPARK_PROXY);
-        mainnetController.aaveV4_setMaxDeficit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 1);
+        // The guard is hardcoded to zero with no admin override, so the deposit only clears once the
+        // deficit itself is gone.
+        vm.clearMockedCalls();
 
         vm.prank(allocator);
         mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
@@ -260,7 +259,7 @@ contract MainnetController_AaveV4_Deposit_Tests is AaveV4_TestBase {
     }
 
     // Verifies the Hub.getAssetDeficitRay signature used by the deposit guard and confirms the tested
-    // markets are deficit-free, so the default (0) tolerance does not block honest deposits.
+    // markets are deficit-free, so the hardcoded zero-deficit guard does not block honest deposits.
     function test_aaveV4_marketsHaveNoDeficit() external view {
         assertEq(IAaveV4Hub(CORE_HUB).getAssetDeficitRay(USDC_ASSET_ID), 0);
         assertEq(IAaveV4Hub(CORE_HUB).getAssetDeficitRay(WETH_ASSET_ID), 0);
