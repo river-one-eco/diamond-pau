@@ -13,9 +13,10 @@ import { IAaveV4SpokeLike } from "../../src/facets/aave-v4/AaveV4Facet.sol";
 import { ForkTestBase } from "./ForkTestBase.t.sol";
 
 interface IAaveV4Hub {
-    function getAssetLiquidity(uint256 assetId) external view returns (uint256);
-    function getAddedAssets(uint256 assetId)    external view returns (uint256);
-    function getAddedShares(uint256 assetId)    external view returns (uint256);
+    function getAssetLiquidity(uint256 assetId)  external view returns (uint256);
+    function getAddedAssets(uint256 assetId)     external view returns (uint256);
+    function getAddedShares(uint256 assetId)     external view returns (uint256);
+    function getAssetDeficitRay(uint256 assetId) external view returns (uint256);
 }
 
 abstract contract AaveV4_TestBase is ForkTestBase {
@@ -134,41 +135,80 @@ contract MainnetController_AaveV4_Deposit_Tests is AaveV4_TestBase {
         mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 1_000e6);
     }
 
-    function test_depositAaveV4_usdcSlippageBoundary() external {
+    function test_depositAaveV4_slippageTooHigh() external {
         deal(Ethereum.USDC, address(almProxy), USDC_DEPOSIT_AMOUNT);
 
-        // USDC supplies at ~1:1 (rounds down at most 1 unit); requiring one unit above the deposit
-        // (1e18 + 1e6 against a 1e12 deposit gives amount + 1) trips the guard.
-        vm.prank(Ethereum.SPARK_PROXY);
-        mainnetController.aaveV4_setMaxSlippage(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 1e18 + 1e6);
+        // Force the measured supplied delta to zero so the post-supply guard trips under a valid
+        // (< 1e18) tolerance, exercising the slippage check independent of real market rounding.
+        vm.mockCall(
+            MAIN_SPOKE,
+            abi.encodeWithSelector(
+                IAaveV4SpokeLike.getUserSuppliedAssets.selector,
+                MAIN_USDC_RESERVE_ID,
+                address(almProxy)
+            ),
+            abi.encode(uint256(0))
+        );
 
         vm.expectRevert("AaveV4Facet/slippage-too-high");
-        vm.prank(allocator);
-        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
-
-        vm.prank(Ethereum.SPARK_PROXY);
-        mainnetController.aaveV4_setMaxSlippage(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 1e18 - 1e4);
-
         vm.prank(allocator);
         mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
     }
 
-    function test_depositAaveV4_wethSlippageBoundary() external {
-        deal(Ethereum.WETH, address(almProxy), WETH_DEPOSIT_AMOUNT);
-
-        // WETH's share price is above 1:1 (accrued interest), so requiring a full 1:1 credit reverts.
-        vm.prank(Ethereum.SPARK_PROXY);
-        mainnetController.aaveV4_setMaxSlippage(MAIN_SPOKE, MAIN_WETH_RESERVE_ID, 1e18);
-
-        vm.expectRevert("AaveV4Facet/slippage-too-high");
-        vm.prank(allocator);
-        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_WETH_RESERVE_ID, WETH_DEPOSIT_AMOUNT);
-
-        vm.prank(Ethereum.SPARK_PROXY);
-        mainnetController.aaveV4_setMaxSlippage(MAIN_SPOKE, MAIN_WETH_RESERVE_ID, 1e18 - 1e4);
+    // Pins the rationale for bounding setMaxSlippage strictly below 1e18: once a reserve accrues
+    // interest its share price rises above 1:1, so a 1e18 (exact 1:1) tolerance would revert every
+    // deposit. The setter forbids 1e18 outright, and the max valid tolerance still admits deposits.
+    function test_depositAaveV4_usdcSlippageOneToOneAfterAccrual() external {
+        deal(Ethereum.USDC, address(almProxy), USDC_DEPOSIT_AMOUNT);
 
         vm.prank(allocator);
-        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_WETH_RESERVE_ID, WETH_DEPOSIT_AMOUNT);
+        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
+
+        skip(365 days);
+
+        // Interest accrued: the supplied position now exceeds the original deposit (share price > 1:1).
+        assertGt(_suppliedAssets(MAIN_SPOKE, MAIN_USDC_RESERVE_ID), USDC_DEPOSIT_AMOUNT);
+
+        // A 1:1 tolerance is rejected by the setter, so it can never wedge deposits post-accrual.
+        vm.prank(Ethereum.SPARK_PROXY);
+        vm.expectRevert("AaveV4Facet/invalid-max-slippage");
+        mainnetController.aaveV4_setMaxSlippage(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 1e18);
+
+        // A tolerance just below 1e18 remains usable: an honest deposit still clears.
+        vm.prank(Ethereum.SPARK_PROXY);
+        mainnetController.aaveV4_setMaxSlippage(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 0.99e18);
+
+        deal(Ethereum.USDC, address(almProxy), USDC_DEPOSIT_AMOUNT);
+
+        vm.prank(allocator);
+        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
+
+        assertEq(usdc.balanceOf(address(almProxy)), 0);
+    }
+
+    function test_depositAaveV4_assetDeficit() external {
+        deal(Ethereum.USDC, address(almProxy), USDC_DEPOSIT_AMOUNT);
+
+        // Simulate an outstanding Hub deficit for USDC (assetId 5).
+        vm.mockCall(
+            CORE_HUB,
+            abi.encodeWithSelector(IAaveV4Hub.getAssetDeficitRay.selector, USDC_ASSET_ID),
+            abi.encode(uint256(1))
+        );
+
+        // Default tolerance is 0, so any deficit blocks the deposit.
+        vm.expectRevert("AaveV4Facet/asset-deficit");
+        vm.prank(allocator);
+        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
+
+        // Admin raises the tolerance to cover the deficit; the deposit then proceeds.
+        vm.prank(Ethereum.SPARK_PROXY);
+        mainnetController.aaveV4_setMaxDeficit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 1);
+
+        vm.prank(allocator);
+        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
+
+        assertApproxEqAbs(_suppliedAssets(MAIN_SPOKE, MAIN_USDC_RESERVE_ID), USDC_DEPOSIT_AMOUNT, 2);
     }
 
     function test_depositAaveV4_usdcRateLimitedBoundary() external {
@@ -217,6 +257,13 @@ contract MainnetController_AaveV4_Deposit_Tests is AaveV4_TestBase {
         assertEq(forexUsdc.hub,        CORE_HUB);
         assertEq(forexUsdc.assetId,    USDC_ASSET_ID);
         assertEq(forexUsdc.decimals,   6);
+    }
+
+    // Verifies the Hub.getAssetDeficitRay signature used by the deposit guard and confirms the tested
+    // markets are deficit-free, so the default (0) tolerance does not block honest deposits.
+    function test_aaveV4_marketsHaveNoDeficit() external view {
+        assertEq(IAaveV4Hub(CORE_HUB).getAssetDeficitRay(USDC_ASSET_ID), 0);
+        assertEq(IAaveV4Hub(CORE_HUB).getAssetDeficitRay(WETH_ASSET_ID), 0);
     }
 
     function test_depositAaveV4_usdc() external {

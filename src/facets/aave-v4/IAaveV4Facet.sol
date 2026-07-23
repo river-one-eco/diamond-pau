@@ -36,6 +36,18 @@ interface IAaveV4Facet is IFacet {
     );
 
     /**
+     * @notice Emitted when the max deficit tolerance for an Aave V4 market is updated.
+     * @param  spoke      Address of the spoke hosting the market.
+     * @param  reserveId  Reserve identifier on the spoke.
+     * @param  maxDeficit New max Hub asset deficit tolerated on deposit, in RAY (1e27) precision.
+     */
+    event AaveV4MaxDeficitSet(
+        address indexed spoke,
+        uint256 indexed reserveId,
+        uint256 maxDeficit
+    );
+
+    /**
      * @notice Emitted when underlying assets are withdrawn from an Aave V4 market.
      * @param  spoke           Address of the spoke hosting the market.
      * @param  reserveId       Reserve identifier on the spoke.
@@ -61,11 +73,23 @@ interface IAaveV4Facet is IFacet {
 
     /**
      * @notice Sets the max slippage for deposit operations on a given `(spoke, reserveId)` market.
+     * @dev    Must be strictly below 1e18: an exact 1:1 requirement is only satisfiable while the
+     *         share price is exactly 1:1 and reverts every deposit once the reserve accrues interest.
      * @param  spoke       Address of the spoke hosting the market.
      * @param  reserveId   Reserve identifier on the spoke.
-     * @param  maxSlippage Max slippage in 1e18 precision (1e18 = no slippage).
+     * @param  maxSlippage Max slippage in 1e18 precision (higher = stricter, must be < 1e18).
      */
     function setMaxSlippage(address spoke, uint256 reserveId, uint256 maxSlippage) external;
+
+    /**
+     * @notice Sets the max Hub asset deficit tolerated on deposit for a `(spoke, reserveId)` market.
+     * @dev    Deposits revert when `IHub(hub).getAssetDeficitRay(assetId)` exceeds this value. The
+     *         default of 0 blocks any deficit; raise it only to clear deposits wedged by dust.
+     * @param  spoke      Address of the spoke hosting the market.
+     * @param  reserveId  Reserve identifier on the spoke.
+     * @param  maxDeficit Max tolerated deficit in RAY (1e27) precision.
+     */
+    function setMaxDeficit(address spoke, uint256 reserveId, uint256 maxDeficit) external;
 
     /**
      * @notice Withdraws underlying assets from the Aave V4 market `(spoke, reserveId)`.
@@ -107,6 +131,17 @@ interface IAaveV4Facet is IFacet {
         external
         view
         returns (uint256 maxSlippage);
+
+    /**
+     * @notice Returns the configured max deficit tolerance for a given `(spoke, reserveId)` market.
+     * @param  spoke      Address of the spoke hosting the market.
+     * @param  reserveId  Reserve identifier on the spoke.
+     * @return maxDeficit Max tolerated Hub asset deficit in RAY (1e27). Zero blocks any deficit.
+     */
+    function getMaxDeficit(address spoke, uint256 reserveId)
+        external
+        view
+        returns (uint256 maxDeficit);
 
     /**
      * @notice Returns the derived withdraw rate limit key for a given `(spoke, reserveId)` market.

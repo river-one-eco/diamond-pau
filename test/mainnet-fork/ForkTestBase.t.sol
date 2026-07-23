@@ -506,7 +506,7 @@ abstract contract ForkTestBase is DssTest {
 
         vm.label(aaveV4Facet, "AaveV4Facet");
 
-        IEnumerableIntegrations.Wire[] memory wires = new IEnumerableIntegrations.Wire[](7);
+        IEnumerableIntegrations.Wire[] memory wires = new IEnumerableIntegrations.Wire[](9);
 
         wires[0] = IEnumerableIntegrations.Wire(
             IMainnetControllerFull.aaveV4_setMaxSlippage.selector,
@@ -541,6 +541,16 @@ abstract contract ForkTestBase is DssTest {
         wires[6] = IEnumerableIntegrations.Wire(
             IMainnetControllerFull.aaveV4_VERSION.selector,
             IFacet.VERSION.selector
+        );
+
+        wires[7] = IEnumerableIntegrations.Wire(
+            IMainnetControllerFull.aaveV4_setMaxDeficit.selector,
+            IAaveV4Facet.setMaxDeficit.selector
+        );
+
+        wires[8] = IEnumerableIntegrations.Wire(
+            IMainnetControllerFull.aaveV4_getMaxDeficit.selector,
+            IAaveV4Facet.getMaxDeficit.selector
         );
 
         IEnumerableIntegrations.Config memory config = IEnumerableIntegrations.Config({

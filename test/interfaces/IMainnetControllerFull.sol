@@ -42,6 +42,8 @@ interface IMainnetControllerFull is IController {
 
     function aaveV4_setMaxSlippage(address spoke, uint256 reserveId, uint256 maxSlippage) external;
 
+    function aaveV4_setMaxDeficit(address spoke, uint256 reserveId, uint256 maxDeficit) external;
+
     function aaveV4_deposit(address spoke, uint256 reserveId, uint256 amount) external;
 
     function aaveV4_withdraw(address spoke, uint256 reserveId, uint256 amount)
@@ -49,6 +51,8 @@ interface IMainnetControllerFull is IController {
         returns (uint256 amountWithdrawn);
 
     function aaveV4_getMaxSlippage(address spoke, uint256 reserveId) external view returns (uint256);
+
+    function aaveV4_getMaxDeficit(address spoke, uint256 reserveId) external view returns (uint256);
 
     function aaveV4_getDepositRateLimitKey(address spoke, uint256 reserveId, address underlying)
         external

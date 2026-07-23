@@ -19,7 +19,11 @@ interface IControllerLike {
 
     function setMaxSlippage(address spoke, uint256 reserveId, uint256 maxSlippage) external;
 
+    function setMaxDeficit(address spoke, uint256 reserveId, uint256 maxDeficit) external;
+
     function getMaxSlippage(address spoke, uint256 reserveId) external view returns (uint256);
+
+    function getMaxDeficit(address spoke, uint256 reserveId) external view returns (uint256);
 
     function getDepositRateLimitKey(address spoke, uint256 reserveId, address underlying)
         external
@@ -46,7 +50,7 @@ contract Controller_AaveV4Facet_Tests is Integration_TestBase {
 
         vm.label(facet, "AaveV4Facet");
 
-        IEnumerableIntegrations.Wire[] memory wires = new IEnumerableIntegrations.Wire[](4);
+        IEnumerableIntegrations.Wire[] memory wires = new IEnumerableIntegrations.Wire[](6);
 
         wires[0] = IEnumerableIntegrations.Wire(
             IControllerLike.setMaxSlippage.selector,
@@ -66,6 +70,16 @@ contract Controller_AaveV4Facet_Tests is Integration_TestBase {
         wires[3] = IEnumerableIntegrations.Wire(
             IControllerLike.getWithdrawRateLimitKey.selector,
             IAaveV4Facet.getWithdrawRateLimitKey.selector
+        );
+
+        wires[4] = IEnumerableIntegrations.Wire(
+            IControllerLike.setMaxDeficit.selector,
+            IAaveV4Facet.setMaxDeficit.selector
+        );
+
+        wires[5] = IEnumerableIntegrations.Wire(
+            IControllerLike.getMaxDeficit.selector,
+            IAaveV4Facet.getMaxDeficit.selector
         );
 
         IEnumerableIntegrations.Config memory config = IEnumerableIntegrations.Config(facet, wires);
@@ -141,6 +155,89 @@ contract Controller_AaveV4Facet_Tests is Integration_TestBase {
         // Each reserve on the same spoke keeps its own tolerance.
         assertEq(controller.getMaxSlippage(spoke, 0), 0.98e18);
         assertEq(controller.getMaxSlippage(spoke, 2), 0.99e18);
+    }
+
+    function test_setMaxSlippage_maxSlippageTooHigh() external {
+        address spoke = makeAddr("spoke");
+
+        vm.startPrank(admin);
+
+        // 1e18 (and above) is rejected: an exact 1:1 requirement reverts once interest accrues.
+        vm.expectRevert("AaveV4Facet/invalid-max-slippage");
+        controller.setMaxSlippage(spoke, 2, 1e18);
+
+        vm.expectRevert("AaveV4Facet/invalid-max-slippage");
+        controller.setMaxSlippage(spoke, 2, 1e18 + 1);
+
+        // The largest valid tolerance is one wei below 1e18.
+        controller.setMaxSlippage(spoke, 2, 1e18 - 1);
+
+        vm.stopPrank();
+
+        assertEq(controller.getMaxSlippage(spoke, 2), 1e18 - 1);
+    }
+
+    /**********************************************************************************************/
+    /*** setMaxDeficit Tests                                                                    ***/
+    /**********************************************************************************************/
+
+    function test_setMaxDeficit_reentrancy() external {
+        _setEntered(address(controller));
+        vm.expectRevert(ReentrancyGuard.ReentrancyGuardReentrantCall.selector);
+        controller.setMaxDeficit(makeAddr("spoke"), 2, 1e27);
+    }
+
+    function test_setMaxDeficit_unauthorizedAccount() external {
+        vm.expectRevert(abi.encodeWithSignature(
+            "AccessControlUnauthorizedAccount(address,bytes32)",
+            address(this),
+            DEFAULT_ADMIN_ROLE
+        ));
+        controller.setMaxDeficit(makeAddr("spoke"), 2, 1e27);
+    }
+
+    function test_setMaxDeficit_spokeZeroAddress() external {
+        vm.prank(admin);
+        vm.expectRevert("AaveV4Facet/spoke-zero-address");
+        controller.setMaxDeficit(address(0), 2, 1e27);
+    }
+
+    function test_setMaxDeficit() external {
+        address spoke     = makeAddr("spoke");
+        uint256 reserveId = 2;
+
+        assertEq(controller.getMaxDeficit(spoke, reserveId), 0);
+
+        vm.prank(admin);
+        vm.expectEmit(address(controller));
+        emit IAaveV4Facet.AaveV4MaxDeficitSet(spoke, reserveId, 1e27);
+        controller.setMaxDeficit(spoke, reserveId, 1e27);
+
+        assertEq(controller.getMaxDeficit(spoke, reserveId), 1e27);
+
+        vm.record();
+
+        vm.prank(admin);
+        vm.expectEmit(address(controller));
+        emit IAaveV4Facet.AaveV4MaxDeficitSet(spoke, reserveId, 2e27);
+        controller.setMaxDeficit(spoke, reserveId, 2e27);
+
+        assertEq(controller.getMaxDeficit(spoke, reserveId), 2e27);
+
+        _assertReentrancyGuardWrittenToTwice(address(controller));
+    }
+
+    function test_setMaxDeficit_perMarket() external {
+        address spoke = makeAddr("spoke");
+
+        vm.startPrank(admin);
+        controller.setMaxDeficit(spoke, 0, 1e27);
+        controller.setMaxDeficit(spoke, 2, 5e27);
+        vm.stopPrank();
+
+        // Each reserve on the same spoke keeps its own tolerance.
+        assertEq(controller.getMaxDeficit(spoke, 0), 1e27);
+        assertEq(controller.getMaxDeficit(spoke, 2), 5e27);
     }
 
     /**********************************************************************************************/
