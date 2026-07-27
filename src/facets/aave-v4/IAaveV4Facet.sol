@@ -27,7 +27,7 @@ interface IAaveV4Facet is IFacet {
      * @notice Emitted when the max slippage for an Aave V4 market is updated.
      * @param  spoke       Address of the spoke hosting the market.
      * @param  reserveId   Reserve identifier on the spoke.
-     * @param  maxSlippage New max slippage in 1e18 precision (1e18 = no slippage).
+     * @param  maxSlippage New max slippage in 1e18 precision (higher = stricter, always < 1e18).
      */
     event AaveV4MaxSlippageSet(
         address indexed spoke,

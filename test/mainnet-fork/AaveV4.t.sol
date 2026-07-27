@@ -169,12 +169,9 @@ contract MainnetController_AaveV4_Deposit_Tests is AaveV4_TestBase {
         // Interest accrued: the supplied position now exceeds the original deposit (share price > 1:1).
         assertGt(_suppliedAssets(MAIN_SPOKE, MAIN_USDC_RESERVE_ID), USDC_DEPOSIT_AMOUNT);
 
-        // A 1:1 tolerance is rejected by the setter, so it can never wedge deposits post-accrual.
-        vm.prank(Ethereum.SPARK_PROXY);
-        vm.expectRevert("AaveV4Facet/invalid-max-slippage");
-        mainnetController.aaveV4_setMaxSlippage(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 1e18);
-
-        // A tolerance just below 1e18 remains usable: an honest deposit still clears.
+        // An exact 1:1 requirement is unrepresentable (the setter rejects 1e18, covered in the
+        // integration suite), so accrual can never wedge deposits: a tolerance just below 1e18
+        // still clears an honest deposit.
         vm.prank(Ethereum.SPARK_PROXY);
         mainnetController.aaveV4_setMaxSlippage(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 0.99e18);
 
