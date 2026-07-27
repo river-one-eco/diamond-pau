@@ -5,6 +5,8 @@ import { IERC20 } from "../../lib/forge-std/src/interfaces/IERC20.sol";
 
 import { ReentrancyGuard } from "../../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
+import { Ethereum as GroveEthereum } from "../../lib/grove-address-registry/src/Ethereum.sol";
+
 import { Ethereum } from "../../lib/spark-address-registry/src/Ethereum.sol";
 
 import { IAaveV4Facet }     from "../../src/facets/aave-v4/IAaveV4Facet.sol";
@@ -23,9 +25,9 @@ abstract contract AaveV4_TestBase is ForkTestBase {
 
     // USDC is suppliable on both the Main and Forex spokes via the same Core Hub asset (assetId 5),
     // which lets the tests exercise per-(spoke, reserveId) rate limits across two spokes for one asset.
-    address internal constant MAIN_SPOKE  = 0x94e7A5dCbE816e498b89aB752661904E2F56c485;
-    address internal constant FOREX_SPOKE = 0xD8B93635b8C6d0fF98CbE90b5988E3F2d1Cd9da1;
-    address internal constant CORE_HUB    = 0xCca852Bc40e560adC3b1Cc58CA5b55638ce826c9;
+    address internal constant MAIN_SPOKE  = GroveEthereum.AAVE_V4_MAIN_SPOKE;
+    address internal constant FOREX_SPOKE = GroveEthereum.AAVE_V4_FOREX_SPOKE;
+    address internal constant CORE_HUB    = GroveEthereum.AAVE_V4_CORE_HUB;
 
     uint256 internal constant MAIN_USDC_RESERVE_ID  = 7;  // USDC (6 decimals),  Core Hub assetId 5
     uint256 internal constant MAIN_WETH_RESERVE_ID  = 0;  // WETH (18 decimals), Core Hub assetId 0
