@@ -115,15 +115,6 @@ contract MainnetController_AaveV4_Deposit_Tests is AaveV4_TestBase {
         mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 1_000e6);
     }
 
-    function test_depositAaveV4_zeroMaxAmount() external {
-        vm.prank(Ethereum.SPARK_PROXY);
-        rateLimits.setRateLimitData(mainUsdcDepositKey, 0, 0);
-
-        vm.expectRevert("RateLimits/zero-maxAmount");
-        vm.prank(allocator);
-        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 1_000e6);
-    }
-
     function test_depositAaveV4_zeroMaxSlippage() external {
         vm.prank(Ethereum.SPARK_PROXY);
         mainnetController.aaveV4_setMaxSlippage(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 0);
@@ -133,6 +124,65 @@ contract MainnetController_AaveV4_Deposit_Tests is AaveV4_TestBase {
         vm.expectRevert("AaveV4Facet/max-slippage-not-set");
         vm.prank(allocator);
         mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 1_000e6);
+    }
+
+    function test_depositAaveV4_assetDeficit() external {
+        deal(Ethereum.USDC, address(almProxy), USDC_DEPOSIT_AMOUNT);
+
+        // Simulate an outstanding Hub deficit for USDC (assetId 5): any deficit blocks the deposit.
+        vm.mockCall(
+            CORE_HUB,
+            abi.encodeWithSelector(IAaveV4Hub.getAssetDeficitRay.selector, USDC_ASSET_ID),
+            abi.encode(uint256(1))
+        );
+
+        vm.expectRevert("AaveV4Facet/asset-deficit");
+        vm.prank(allocator);
+        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
+
+        // The guard is hardcoded to zero with no admin override, so the deposit only clears once the
+        // deficit itself is gone.
+        vm.clearMockedCalls();
+
+        vm.prank(allocator);
+        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
+
+        assertApproxEqAbs(_suppliedAssets(MAIN_SPOKE, MAIN_USDC_RESERVE_ID), USDC_DEPOSIT_AMOUNT, 2);
+    }
+
+    function test_depositAaveV4_zeroMaxAmount() external {
+        vm.prank(Ethereum.SPARK_PROXY);
+        rateLimits.setRateLimitData(mainUsdcDepositKey, 0, 0);
+
+        vm.expectRevert("RateLimits/zero-maxAmount");
+        vm.prank(allocator);
+        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 1_000e6);
+    }
+
+    function test_depositAaveV4_usdcRateLimitedBoundary() external {
+        deal(Ethereum.USDC, address(almProxy), USDC_DEPOSIT_LIMIT + 1);
+
+        vm.expectRevert("RateLimits/rate-limit-exceeded");
+        vm.prank(allocator);
+        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_LIMIT + 1);
+
+        vm.prank(allocator);
+        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
+
+        assertEq(rateLimits.getCurrentRateLimit(mainUsdcDepositKey), USDC_DEPOSIT_LIMIT - USDC_DEPOSIT_AMOUNT);
+    }
+
+    function test_depositAaveV4_wethRateLimitedBoundary() external {
+        deal(Ethereum.WETH, address(almProxy), WETH_DEPOSIT_LIMIT + 1);
+
+        vm.expectRevert("RateLimits/rate-limit-exceeded");
+        vm.prank(allocator);
+        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_WETH_RESERVE_ID, WETH_DEPOSIT_LIMIT + 1);
+
+        vm.prank(allocator);
+        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_WETH_RESERVE_ID, WETH_DEPOSIT_AMOUNT);
+
+        assertEq(rateLimits.getCurrentRateLimit(mainWethDepositKey), WETH_DEPOSIT_LIMIT - WETH_DEPOSIT_AMOUNT);
     }
 
     function test_depositAaveV4_slippageTooHigh() external {
@@ -181,56 +231,6 @@ contract MainnetController_AaveV4_Deposit_Tests is AaveV4_TestBase {
         mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
 
         assertEq(usdc.balanceOf(address(almProxy)), 0);
-    }
-
-    function test_depositAaveV4_assetDeficit() external {
-        deal(Ethereum.USDC, address(almProxy), USDC_DEPOSIT_AMOUNT);
-
-        // Simulate an outstanding Hub deficit for USDC (assetId 5): any deficit blocks the deposit.
-        vm.mockCall(
-            CORE_HUB,
-            abi.encodeWithSelector(IAaveV4Hub.getAssetDeficitRay.selector, USDC_ASSET_ID),
-            abi.encode(uint256(1))
-        );
-
-        vm.expectRevert("AaveV4Facet/asset-deficit");
-        vm.prank(allocator);
-        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
-
-        // The guard is hardcoded to zero with no admin override, so the deposit only clears once the
-        // deficit itself is gone.
-        vm.clearMockedCalls();
-
-        vm.prank(allocator);
-        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
-
-        assertApproxEqAbs(_suppliedAssets(MAIN_SPOKE, MAIN_USDC_RESERVE_ID), USDC_DEPOSIT_AMOUNT, 2);
-    }
-
-    function test_depositAaveV4_usdcRateLimitedBoundary() external {
-        deal(Ethereum.USDC, address(almProxy), USDC_DEPOSIT_LIMIT + 1);
-
-        vm.expectRevert("RateLimits/rate-limit-exceeded");
-        vm.prank(allocator);
-        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_LIMIT + 1);
-
-        vm.prank(allocator);
-        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
-
-        assertEq(rateLimits.getCurrentRateLimit(mainUsdcDepositKey), USDC_DEPOSIT_LIMIT - USDC_DEPOSIT_AMOUNT);
-    }
-
-    function test_depositAaveV4_wethRateLimitedBoundary() external {
-        deal(Ethereum.WETH, address(almProxy), WETH_DEPOSIT_LIMIT + 1);
-
-        vm.expectRevert("RateLimits/rate-limit-exceeded");
-        vm.prank(allocator);
-        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_WETH_RESERVE_ID, WETH_DEPOSIT_LIMIT + 1);
-
-        vm.prank(allocator);
-        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_WETH_RESERVE_ID, WETH_DEPOSIT_AMOUNT);
-
-        assertEq(rateLimits.getCurrentRateLimit(mainWethDepositKey), WETH_DEPOSIT_LIMIT - WETH_DEPOSIT_AMOUNT);
     }
 
     // Guards the IAaveV4SpokeLike.Reserve layout assumed by the partial interface, across both spokes.
@@ -641,8 +641,8 @@ contract MainnetController_AaveV4_TwoSpoke_Tests is AaveV4_TestBase {
         assertEq(rateLimits.getCurrentRateLimit(forexUsdcDepositKey), 200_000e6);
 
         // Stage 4: Main USDC deposit above its remaining limit reverts and mutates nothing.
-        vm.prank(allocator);
         vm.expectRevert("RateLimits/rate-limit-exceeded");
+        vm.prank(allocator);
         mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 200_000e6 + 1);
 
         assertEq(rateLimits.getCurrentRateLimit(mainUsdcDepositKey),  200_000e6);
@@ -654,8 +654,8 @@ contract MainnetController_AaveV4_TwoSpoke_Tests is AaveV4_TestBase {
 
         assertEq(rateLimits.getCurrentRateLimit(forexUsdcDepositKey), 0);
 
-        vm.prank(allocator);
         vm.expectRevert("RateLimits/rate-limit-exceeded");
+        vm.prank(allocator);
         mainnetController.aaveV4_deposit(FOREX_SPOKE, FOREX_USDC_RESERVE_ID, 1);
 
         vm.prank(allocator);

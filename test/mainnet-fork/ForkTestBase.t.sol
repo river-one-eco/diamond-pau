@@ -514,18 +514,18 @@ abstract contract ForkTestBase is DssTest {
         );
 
         wires[1] = IEnumerableIntegrations.Wire(
+            IMainnetControllerFull.aaveV4_getMaxSlippage.selector,
+            IAaveV4Facet.getMaxSlippage.selector
+        );
+
+        wires[2] = IEnumerableIntegrations.Wire(
             IMainnetControllerFull.aaveV4_deposit.selector,
             IAaveV4Facet.deposit.selector
         );
 
-        wires[2] = IEnumerableIntegrations.Wire(
+        wires[3] = IEnumerableIntegrations.Wire(
             IMainnetControllerFull.aaveV4_withdraw.selector,
             IAaveV4Facet.withdraw.selector
-        );
-
-        wires[3] = IEnumerableIntegrations.Wire(
-            IMainnetControllerFull.aaveV4_getMaxSlippage.selector,
-            IAaveV4Facet.getMaxSlippage.selector
         );
 
         wires[4] = IEnumerableIntegrations.Wire(

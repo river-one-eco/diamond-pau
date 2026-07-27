@@ -32,7 +32,7 @@ interface IAaveV4Facet is IFacet {
     event AaveV4MaxSlippageSet(
         address indexed spoke,
         uint256 indexed reserveId,
-        uint256 maxSlippage
+        uint256         maxSlippage
     );
 
     /**
@@ -44,7 +44,7 @@ interface IAaveV4Facet is IFacet {
     event AaveV4Withdraw(
         address indexed spoke,
         uint256 indexed reserveId,
-        uint256 amountWithdrawn
+        uint256         amountWithdrawn
     );
 
     /**********************************************************************************************/

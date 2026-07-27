@@ -132,10 +132,10 @@ contract AaveV4Facet is IAaveV4Facet, Facet {
 
         _decreaseRateLimit(getDepositRateLimitKey(spoke, reserveId, underlying), amount);
 
-        uint256 suppliedBefore = IAaveV4SpokeLike(spoke).getUserSuppliedAssets(reserveId, proxy);
-
         // Approve underlying to the spoke from the proxy (assumes the proxy has enough underlying).
         ApproveLib.approve(underlying, proxy, spoke, amount);
+
+        uint256 startingBalance = IAaveV4SpokeLike(spoke).getUserSuppliedAssets(reserveId, proxy);
 
         // Supply underlying to the spoke, increasing the proxy's supplied position.
         IALMProxy(proxy).doCall(
@@ -144,10 +144,10 @@ contract AaveV4Facet is IAaveV4Facet, Facet {
         );
 
         // Measure the position change rather than trusting the returned (shares, amount) tuple.
-        uint256 newSupplied
-            = IAaveV4SpokeLike(spoke).getUserSuppliedAssets(reserveId, proxy) - suppliedBefore;
+        uint256 amountReceived
+            = IAaveV4SpokeLike(spoke).getUserSuppliedAssets(reserveId, proxy) - startingBalance;
 
-        require(newSupplied >= amount * maxSlippage / 1e18, "AaveV4Facet/slippage-too-high");
+        require(amountReceived >= amount * maxSlippage / 1e18, "AaveV4Facet/slippage-too-high");
 
         // Clear the approval in case the spoke did not pull the full amount.
         ApproveLib.approve(underlying, proxy, spoke, 0);

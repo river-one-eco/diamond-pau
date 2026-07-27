@@ -3,7 +3,7 @@ pragma solidity ^0.8.34;
 
 import { ReentrancyGuard } from "../../../lib/openzeppelin-contracts/contracts/utils/ReentrancyGuard.sol";
 
-import { IAaveV4Facet }           from "../../../src/facets/aave-v4/IAaveV4Facet.sol";
+import { IAaveV4Facet }            from "../../../src/facets/aave-v4/IAaveV4Facet.sol";
 import { IEnumerableIntegrations } from "../../../src/interfaces/IEnumerableIntegrations.sol";
 
 import {
@@ -100,47 +100,9 @@ contract Controller_AaveV4Facet_Tests is Integration_TestBase {
     }
 
     function test_setMaxSlippage_spokeZeroAddress() external {
-        vm.prank(admin);
         vm.expectRevert("AaveV4Facet/spoke-zero-address");
+        vm.prank(admin);
         controller.setMaxSlippage(address(0), 2, 0.98e18);
-    }
-
-    function test_setMaxSlippage() external {
-        address spoke     = makeAddr("spoke");
-        uint256 reserveId = 2;
-
-        assertEq(controller.getMaxSlippage(spoke, reserveId), 0);
-
-        vm.prank(admin);
-        vm.expectEmit(address(controller));
-        emit IAaveV4Facet.AaveV4MaxSlippageSet(spoke, reserveId, 0.98e18);
-        controller.setMaxSlippage(spoke, reserveId, 0.98e18);
-
-        assertEq(controller.getMaxSlippage(spoke, reserveId), 0.98e18);
-
-        vm.record();
-
-        vm.prank(admin);
-        vm.expectEmit(address(controller));
-        emit IAaveV4Facet.AaveV4MaxSlippageSet(spoke, reserveId, 0.99e18);
-        controller.setMaxSlippage(spoke, reserveId, 0.99e18);
-
-        assertEq(controller.getMaxSlippage(spoke, reserveId), 0.99e18);
-
-        _assertReentrancyGuardWrittenToTwice(address(controller));
-    }
-
-    function test_setMaxSlippage_perMarket() external {
-        address spoke = makeAddr("spoke");
-
-        vm.startPrank(admin);
-        controller.setMaxSlippage(spoke, 0, 0.98e18);
-        controller.setMaxSlippage(spoke, 2, 0.99e18);
-        vm.stopPrank();
-
-        // Each reserve on the same spoke keeps its own tolerance.
-        assertEq(controller.getMaxSlippage(spoke, 0), 0.98e18);
-        assertEq(controller.getMaxSlippage(spoke, 2), 0.99e18);
     }
 
     function test_setMaxSlippage_maxSlippageTooHigh() external {
@@ -161,6 +123,44 @@ contract Controller_AaveV4Facet_Tests is Integration_TestBase {
         vm.stopPrank();
 
         assertEq(controller.getMaxSlippage(spoke, 2), 1e18 - 1);
+    }
+
+    function test_setMaxSlippage() external {
+        address spoke     = makeAddr("spoke");
+        uint256 reserveId = 2;
+
+        assertEq(controller.getMaxSlippage(spoke, reserveId), 0);
+
+        vm.expectEmit(address(controller));
+        emit IAaveV4Facet.AaveV4MaxSlippageSet(spoke, reserveId, 0.98e18);
+        vm.prank(admin);
+        controller.setMaxSlippage(spoke, reserveId, 0.98e18);
+
+        assertEq(controller.getMaxSlippage(spoke, reserveId), 0.98e18);
+
+        vm.record();
+
+        vm.expectEmit(address(controller));
+        emit IAaveV4Facet.AaveV4MaxSlippageSet(spoke, reserveId, 0.99e18);
+        vm.prank(admin);
+        controller.setMaxSlippage(spoke, reserveId, 0.99e18);
+
+        assertEq(controller.getMaxSlippage(spoke, reserveId), 0.99e18);
+
+        _assertReentrancyGuardWrittenToTwice(address(controller));
+    }
+
+    function test_setMaxSlippage_perMarket() external {
+        address spoke = makeAddr("spoke");
+
+        vm.startPrank(admin);
+        controller.setMaxSlippage(spoke, 0, 0.98e18);
+        controller.setMaxSlippage(spoke, 2, 0.99e18);
+        vm.stopPrank();
+
+        // Each reserve on the same spoke keeps its own tolerance.
+        assertEq(controller.getMaxSlippage(spoke, 0), 0.98e18);
+        assertEq(controller.getMaxSlippage(spoke, 2), 0.99e18);
     }
 
     /**********************************************************************************************/

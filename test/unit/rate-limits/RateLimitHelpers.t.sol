@@ -12,6 +12,8 @@ import {
     makeAddressKey as makeAddressKeyImplementation,
     makeAddressUint16AddressKey as makeAddressUint16AddressKeyImplementation,
     makeAddressUint16Key as makeAddressUint16KeyImplementation,
+    makeAddressUint256AddressKey as makeAddressUint256AddressKeyImplementation,
+    makeAddressUint256Key as makeAddressUint256KeyImplementation,
     makeBytes32Key as makeBytes32KeyImplementation,
     makeUint32Key as makeUint32KeyImplementation
 } from "../../../src/libraries/RateLimitHelpers.sol";
@@ -42,6 +44,14 @@ contract RateLimitHelpersHarness {
 
     function makeAddressUint16AddressKey(bytes32 key, address asset, uint16 domain, address module) public pure returns (bytes32) {
         return makeAddressUint16AddressKeyImplementation(key, asset, domain, module);
+    }
+
+    function makeAddressUint256Key(bytes32 key, address asset, uint256 reserveId) public pure returns (bytes32) {
+        return makeAddressUint256KeyImplementation(key, asset, reserveId);
+    }
+
+    function makeAddressUint256AddressKey(bytes32 key, address asset, uint256 reserveId, address module) public pure returns (bytes32) {
+        return makeAddressUint256AddressKeyImplementation(key, asset, reserveId, module);
     }
 
     function makeAddressAddressUint32Key(bytes32 key, address asset, address destination, uint32 domain) public pure returns (bytes32) {
@@ -134,6 +144,20 @@ contract RateLimitHelpers_Tests is UnitTestBase {
         assertEq(
             wrapper.makeAddressUint16AddressKey(KEY, makeAddr("account"), type(uint16).max, makeAddr("module")),
             keccak256(abi.encode(KEY, makeAddr("account"), uint16(type(uint16).max), makeAddr("module")))
+        );
+    }
+
+    function test_makeAddressUint256Key() external {
+        assertEq(
+            wrapper.makeAddressUint256Key(KEY, makeAddr("account"), type(uint256).max),
+            keccak256(abi.encode(KEY, makeAddr("account"), type(uint256).max))
+        );
+    }
+
+    function test_makeAddressUint256AddressKey() external {
+        assertEq(
+            wrapper.makeAddressUint256AddressKey(KEY, makeAddr("account"), type(uint256).max, makeAddr("module")),
+            keccak256(abi.encode(KEY, makeAddr("account"), type(uint256).max, makeAddr("module")))
         );
     }
 
