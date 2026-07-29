@@ -14,7 +14,7 @@ import { IAaveV4SpokeLike } from "../../src/facets/aave-v4/AaveV4Facet.sol";
 
 import { ForkTestBase } from "./ForkTestBase.t.sol";
 
-interface IAaveV4Hub {
+interface IAaveV4HubLike {
     function getAssetLiquidity(uint256 assetId)  external view returns (uint256);
     function getAddedAssets(uint256 assetId)     external view returns (uint256);
     function getAddedShares(uint256 assetId)     external view returns (uint256);
@@ -114,18 +114,18 @@ contract MainnetController_AaveV4_Deposit_Tests is AaveV4_TestBase {
             address(this),
             ALLOCATOR_ROLE
         ));
-        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 1_000e6);
+        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
     }
 
     function test_depositAaveV4_zeroMaxSlippage() external {
         vm.prank(Ethereum.SPARK_PROXY);
         mainnetController.aaveV4_setMaxSlippage(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 0);
 
-        deal(Ethereum.USDC, address(almProxy), 1_000e6);
+        deal(Ethereum.USDC, address(almProxy), USDC_DEPOSIT_AMOUNT);
 
         vm.expectRevert("AaveV4Facet/max-slippage-not-set");
         vm.prank(allocator);
-        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 1_000e6);
+        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
     }
 
     function test_depositAaveV4_assetDeficit() external {
@@ -134,7 +134,7 @@ contract MainnetController_AaveV4_Deposit_Tests is AaveV4_TestBase {
         // Simulate an outstanding Hub deficit for USDC (assetId 5): any deficit blocks the deposit.
         vm.mockCall(
             CORE_HUB,
-            abi.encodeWithSelector(IAaveV4Hub.getAssetDeficitRay.selector, USDC_ASSET_ID),
+            abi.encodeWithSelector(IAaveV4HubLike.getAssetDeficitRay.selector, USDC_ASSET_ID),
             abi.encode(uint256(1))
         );
 
@@ -149,7 +149,7 @@ contract MainnetController_AaveV4_Deposit_Tests is AaveV4_TestBase {
         vm.prank(allocator);
         mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
 
-        assertApproxEqAbs(_suppliedAssets(MAIN_SPOKE, MAIN_USDC_RESERVE_ID), USDC_DEPOSIT_AMOUNT, 2);
+        assertEq(_suppliedAssets(MAIN_SPOKE, MAIN_USDC_RESERVE_ID), USDC_DEPOSIT_AMOUNT - 1);
     }
 
     function test_depositAaveV4_zeroMaxAmount() external {
@@ -158,7 +158,7 @@ contract MainnetController_AaveV4_Deposit_Tests is AaveV4_TestBase {
 
         vm.expectRevert("RateLimits/zero-maxAmount");
         vm.prank(allocator);
-        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 1_000e6);
+        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
     }
 
     function test_depositAaveV4_usdcRateLimitedBoundary() external {
@@ -207,9 +207,9 @@ contract MainnetController_AaveV4_Deposit_Tests is AaveV4_TestBase {
         mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
     }
 
-    // Pins the rationale for bounding setMaxSlippage strictly below 1e18: once a reserve accrues
-    // interest its share price rises above 1:1, so a 1e18 (exact 1:1) tolerance would revert every
-    // deposit. The setter forbids 1e18 outright, and the max valid tolerance still admits deposits.
+    // Pins why an exact 1:1 (1e18) tolerance is unusable: the reserve credits a round-down share
+    // amount, so a 1e18 tolerance reverts every deposit, accrual or not, while one wei below it
+    // still clears an honest deposit.
     function test_depositAaveV4_usdcSlippageOneToOneAfterAccrual() external {
         deal(Ethereum.USDC, address(almProxy), USDC_DEPOSIT_AMOUNT);
 
@@ -221,18 +221,24 @@ contract MainnetController_AaveV4_Deposit_Tests is AaveV4_TestBase {
         // Interest accrued: the supplied position now exceeds the original deposit (share price > 1:1).
         assertGt(_suppliedAssets(MAIN_SPOKE, MAIN_USDC_RESERVE_ID), USDC_DEPOSIT_AMOUNT);
 
-        // An exact 1:1 requirement is unrepresentable (the setter rejects 1e18, covered in the
-        // integration suite), so accrual can never wedge deposits: a tolerance just below 1e18
-        // still clears an honest deposit.
-        vm.prank(Ethereum.SPARK_PROXY);
-        mainnetController.aaveV4_setMaxSlippage(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 0.99e18);
-
         deal(Ethereum.USDC, address(almProxy), USDC_DEPOSIT_AMOUNT);
+
+        vm.prank(Ethereum.SPARK_PROXY);
+        mainnetController.aaveV4_setMaxSlippage(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 1e18);
+
+        vm.expectRevert("AaveV4Facet/slippage-too-high");
+        vm.prank(allocator);
+        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
+
+        // Accrual can never wedge deposits: the strictest usable tolerance still admits one.
+        vm.prank(Ethereum.SPARK_PROXY);
+        mainnetController.aaveV4_setMaxSlippage(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 1e18 - 1);
 
         vm.prank(allocator);
         mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
 
         assertEq(usdc.balanceOf(address(almProxy)), 0);
+        assertGt(_suppliedAssets(MAIN_SPOKE, MAIN_USDC_RESERVE_ID), 2 * USDC_DEPOSIT_AMOUNT);
     }
 
     // Guards the IAaveV4SpokeLike.Reserve layout assumed by the partial interface, across both spokes.
@@ -260,8 +266,8 @@ contract MainnetController_AaveV4_Deposit_Tests is AaveV4_TestBase {
     // Verifies the Hub.getAssetDeficitRay signature used by the deposit guard and confirms the tested
     // markets are deficit-free, so the hardcoded zero-deficit guard does not block honest deposits.
     function test_aaveV4_marketsHaveNoDeficit() external view {
-        assertEq(IAaveV4Hub(CORE_HUB).getAssetDeficitRay(USDC_ASSET_ID), 0);
-        assertEq(IAaveV4Hub(CORE_HUB).getAssetDeficitRay(WETH_ASSET_ID), 0);
+        assertEq(IAaveV4HubLike(CORE_HUB).getAssetDeficitRay(USDC_ASSET_ID), 0);
+        assertEq(IAaveV4HubLike(CORE_HUB).getAssetDeficitRay(WETH_ASSET_ID), 0);
     }
 
     function test_depositAaveV4_usdc() external {
@@ -269,8 +275,8 @@ contract MainnetController_AaveV4_Deposit_Tests is AaveV4_TestBase {
 
         assertEq(usdc.allowance(address(almProxy), MAIN_SPOKE),      0);
         assertEq(_suppliedAssets(MAIN_SPOKE, MAIN_USDC_RESERVE_ID),  0);
-        assertEq(usdc.balanceOf(address(almProxy)),                 USDC_DEPOSIT_AMOUNT);
-        assertEq(usdc.balanceOf(CORE_HUB),                          startingHubBalanceUsdc);
+        assertEq(usdc.balanceOf(address(almProxy)),                  USDC_DEPOSIT_AMOUNT);
+        assertEq(usdc.balanceOf(CORE_HUB),                           startingHubBalanceUsdc);
         assertEq(rateLimits.getCurrentRateLimit(mainUsdcDepositKey), USDC_DEPOSIT_LIMIT);
 
         vm.record();
@@ -283,23 +289,23 @@ contract MainnetController_AaveV4_Deposit_Tests is AaveV4_TestBase {
 
         _assertReentrancyGuardWrittenToTwice();
 
-        assertEq(usdc.allowance(address(almProxy), MAIN_SPOKE), 0);
-        assertApproxEqAbs(_suppliedAssets(MAIN_SPOKE, MAIN_USDC_RESERVE_ID), USDC_DEPOSIT_AMOUNT, 2);
-        assertEq(usdc.balanceOf(address(almProxy)),                 0);
-        assertEq(usdc.balanceOf(CORE_HUB),                          startingHubBalanceUsdc + USDC_DEPOSIT_AMOUNT);
+        assertEq(usdc.allowance(address(almProxy), MAIN_SPOKE),      0);
+        assertEq(_suppliedAssets(MAIN_SPOKE, MAIN_USDC_RESERVE_ID),  USDC_DEPOSIT_AMOUNT - 1);
+        assertEq(usdc.balanceOf(address(almProxy)),                  0);
+        assertEq(usdc.balanceOf(CORE_HUB),                           startingHubBalanceUsdc + USDC_DEPOSIT_AMOUNT);
         assertEq(rateLimits.getCurrentRateLimit(mainUsdcDepositKey), USDC_DEPOSIT_LIMIT - USDC_DEPOSIT_AMOUNT);
     }
 
     function test_depositAaveV4_weth() external {
         // WETH share price is above 1:1 (accrued interest).
-        assertGt(IAaveV4Hub(CORE_HUB).getAddedAssets(WETH_ASSET_ID), IAaveV4Hub(CORE_HUB).getAddedShares(WETH_ASSET_ID));
+        assertGt(IAaveV4HubLike(CORE_HUB).getAddedAssets(WETH_ASSET_ID), IAaveV4HubLike(CORE_HUB).getAddedShares(WETH_ASSET_ID));
 
         deal(Ethereum.WETH, address(almProxy), WETH_DEPOSIT_AMOUNT);
 
         assertEq(weth.allowance(address(almProxy), MAIN_SPOKE),      0);
         assertEq(_suppliedAssets(MAIN_SPOKE, MAIN_WETH_RESERVE_ID),  0);
-        assertEq(weth.balanceOf(address(almProxy)),                 WETH_DEPOSIT_AMOUNT);
-        assertEq(weth.balanceOf(CORE_HUB),                          startingHubBalanceWeth);
+        assertEq(weth.balanceOf(address(almProxy)),                  WETH_DEPOSIT_AMOUNT);
+        assertEq(weth.balanceOf(CORE_HUB),                           startingHubBalanceWeth);
         assertEq(rateLimits.getCurrentRateLimit(mainWethDepositKey), WETH_DEPOSIT_LIMIT);
 
         vm.record();
@@ -312,10 +318,10 @@ contract MainnetController_AaveV4_Deposit_Tests is AaveV4_TestBase {
 
         _assertReentrancyGuardWrittenToTwice();
 
-        assertEq(weth.allowance(address(almProxy), MAIN_SPOKE), 0);
-        assertApproxEqAbs(_suppliedAssets(MAIN_SPOKE, MAIN_WETH_RESERVE_ID), WETH_DEPOSIT_AMOUNT, 10);
-        assertEq(weth.balanceOf(address(almProxy)),                 0);
-        assertEq(weth.balanceOf(CORE_HUB),                          startingHubBalanceWeth + WETH_DEPOSIT_AMOUNT);
+        assertEq(weth.allowance(address(almProxy), MAIN_SPOKE),      0);
+        assertEq(_suppliedAssets(MAIN_SPOKE, MAIN_WETH_RESERVE_ID),  WETH_DEPOSIT_AMOUNT - 1);
+        assertEq(weth.balanceOf(address(almProxy)),                  0);
+        assertEq(weth.balanceOf(CORE_HUB),                           startingHubBalanceWeth + WETH_DEPOSIT_AMOUNT);
         assertEq(rateLimits.getCurrentRateLimit(mainWethDepositKey), WETH_DEPOSIT_LIMIT - WETH_DEPOSIT_AMOUNT);
     }
 
@@ -337,7 +343,7 @@ contract MainnetController_AaveV4_Withdraw_Tests is AaveV4_TestBase {
             address(this),
             ALLOCATOR_ROLE
         ));
-        mainnetController.aaveV4_withdraw(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 1_000e6);
+        mainnetController.aaveV4_withdraw(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
     }
 
     function test_withdrawAaveV4_zeroMaxAmount() external {
@@ -345,13 +351,13 @@ contract MainnetController_AaveV4_Withdraw_Tests is AaveV4_TestBase {
         vm.prank(Ethereum.SPARK_PROXY);
         rateLimits.setRateLimitData(mainUsdcWithdrawKey, 0, 0);
 
-        deal(Ethereum.USDC, address(almProxy), 1_000e6);
+        deal(Ethereum.USDC, address(almProxy), USDC_DEPOSIT_AMOUNT);
 
         vm.startPrank(allocator);
-        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 1_000e6);
+        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
 
         vm.expectRevert("RateLimits/zero-maxAmount");
-        mainnetController.aaveV4_withdraw(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 1_000e6);
+        mainnetController.aaveV4_withdraw(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
         vm.stopPrank();
     }
 
@@ -393,7 +399,7 @@ contract MainnetController_AaveV4_Withdraw_Tests is AaveV4_TestBase {
         mainnetController.aaveV4_withdraw(MAIN_SPOKE, MAIN_WETH_RESERVE_ID, withdrawLimit);
         vm.stopPrank();
 
-        assertApproxEqAbs(rateLimits.getCurrentRateLimit(mainWethWithdrawKey), 0, 10);
+        assertEq(rateLimits.getCurrentRateLimit(mainWethWithdrawKey), 0);
     }
 
     function test_withdrawAaveV4_usdc() external {
@@ -417,8 +423,8 @@ contract MainnetController_AaveV4_Withdraw_Tests is AaveV4_TestBase {
         uint256 supplied = _suppliedAssets(MAIN_SPOKE, MAIN_USDC_RESERVE_ID);
         assertGt(supplied, USDC_DEPOSIT_AMOUNT);
 
-        assertEq(usdc.balanceOf(address(almProxy)), 0);
-        assertEq(usdc.balanceOf(CORE_HUB),          startingHubBalanceUsdc + USDC_DEPOSIT_AMOUNT);
+        assertEq(usdc.balanceOf(address(almProxy)),                   0);
+        assertEq(usdc.balanceOf(CORE_HUB),                            startingHubBalanceUsdc + USDC_DEPOSIT_AMOUNT);
         assertEq(rateLimits.getCurrentRateLimit(mainUsdcDepositKey),  USDC_DEPOSIT_LIMIT - USDC_DEPOSIT_AMOUNT + depositSlope * 1 hours);
         assertEq(rateLimits.getCurrentRateLimit(mainUsdcWithdrawKey), type(uint256).max);
 
@@ -437,7 +443,7 @@ contract MainnetController_AaveV4_Withdraw_Tests is AaveV4_TestBase {
 
         assertEq(usdc.balanceOf(address(almProxy)),                   partialAmount);
         assertEq(usdc.balanceOf(CORE_HUB),                            startingHubBalanceUsdc + USDC_DEPOSIT_AMOUNT - partialAmount);
-        assertApproxEqAbs(_suppliedAssets(MAIN_SPOKE, MAIN_USDC_RESERVE_ID), supplied - partialAmount, 2);
+        assertEq(_suppliedAssets(MAIN_SPOKE, MAIN_USDC_RESERVE_ID),   supplied - partialAmount);
         assertEq(rateLimits.getCurrentRateLimit(mainUsdcDepositKey),  USDC_DEPOSIT_LIMIT - USDC_DEPOSIT_AMOUNT + depositSlope * 1 hours + partialAmount);
         assertEq(rateLimits.getCurrentRateLimit(mainUsdcWithdrawKey), type(uint256).max);
 
@@ -451,7 +457,7 @@ contract MainnetController_AaveV4_Withdraw_Tests is AaveV4_TestBase {
         assertEq(mainnetController.aaveV4_withdraw(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, type(uint256).max), remaining);
 
         assertEq(_suppliedAssets(MAIN_SPOKE, MAIN_USDC_RESERVE_ID), 0);
-        assertApproxEqAbs(usdc.balanceOf(address(almProxy)), supplied, 2);
+        assertEq(usdc.balanceOf(address(almProxy)),                 supplied);
 
         // Deposit capacity restored up to the cap; withdraw capacity untouched (unlimited).
         assertEq(rateLimits.getCurrentRateLimit(mainUsdcDepositKey),  USDC_DEPOSIT_LIMIT);
@@ -514,7 +520,7 @@ contract MainnetController_AaveV4_Withdraw_Tests is AaveV4_TestBase {
         assertEq(mainnetController.aaveV4_withdraw(MAIN_SPOKE, MAIN_WETH_RESERVE_ID, type(uint256).max), supplied);
 
         assertEq(_suppliedAssets(MAIN_SPOKE, MAIN_WETH_RESERVE_ID), 0);
-        assertApproxEqAbs(weth.balanceOf(address(almProxy)), supplied, 10);
+        assertEq(weth.balanceOf(address(almProxy)),                 supplied);
 
         assertEq(rateLimits.getCurrentRateLimit(mainWethDepositKey),  WETH_DEPOSIT_LIMIT);
         assertEq(rateLimits.getCurrentRateLimit(mainWethWithdrawKey), type(uint256).max);
@@ -531,7 +537,7 @@ contract MainnetController_AaveV4_DonationInflationAttack_Test is AaveV4_TestBas
     // accounting derives from balanceOf. Aave v4's Hub tracks liquidity internally, so a raw donation
     // is inert and an honest deposit still receives fair value.
     function test_depositAaveV4_donationDoesNotInflateSharePrice() external {
-        IAaveV4Hub hub = IAaveV4Hub(CORE_HUB);
+        IAaveV4HubLike hub = IAaveV4HubLike(CORE_HUB);
 
         uint256 liquidityBefore = hub.getAssetLiquidity(USDC_ASSET_ID);
         uint256 assetsBefore    = hub.getAddedAssets(USDC_ASSET_ID);
@@ -554,7 +560,7 @@ contract MainnetController_AaveV4_DonationInflationAttack_Test is AaveV4_TestBas
         vm.prank(allocator);
         mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
 
-        assertApproxEqAbs(_suppliedAssets(MAIN_SPOKE, MAIN_USDC_RESERVE_ID), USDC_DEPOSIT_AMOUNT, 2);
+        assertEq(_suppliedAssets(MAIN_SPOKE, MAIN_USDC_RESERVE_ID), USDC_DEPOSIT_AMOUNT - 1);
 
         // Shares were minted against the deposit, proving the donation did not move the share price.
         assertGt(hub.getAddedShares(USDC_ASSET_ID), sharesBefore);
@@ -590,14 +596,14 @@ contract MainnetController_AaveV4_TwoSpoke_Tests is AaveV4_TestBase {
         assertEq(rateLimits.getCurrentRateLimit(forexUsdcDepositKey), USDC_DEPOSIT_LIMIT - amount);
 
         // Positions are tracked separately per spoke.
-        assertApproxEqAbs(_suppliedAssets(MAIN_SPOKE,  MAIN_USDC_RESERVE_ID),  amount, 2);
-        assertApproxEqAbs(_suppliedAssets(FOREX_SPOKE, FOREX_USDC_RESERVE_ID), amount, 2);
+        assertEq(_suppliedAssets(MAIN_SPOKE,  MAIN_USDC_RESERVE_ID),  amount - 1);
+        assertEq(_suppliedAssets(FOREX_SPOKE, FOREX_USDC_RESERVE_ID), amount - 1);
 
         // Withdrawing from the Main Spoke restores only Main Spoke deposit capacity.
         vm.prank(allocator);
         mainnetController.aaveV4_withdraw(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, type(uint256).max);
 
-        assertApproxEqAbs(rateLimits.getCurrentRateLimit(mainUsdcDepositKey), USDC_DEPOSIT_LIMIT, 2);
+        assertEq(rateLimits.getCurrentRateLimit(mainUsdcDepositKey),  USDC_DEPOSIT_LIMIT - 1);
         assertEq(rateLimits.getCurrentRateLimit(forexUsdcDepositKey), USDC_DEPOSIT_LIMIT - amount);
         assertEq(_suppliedAssets(MAIN_SPOKE, MAIN_USDC_RESERVE_ID),   0);
     }
@@ -677,9 +683,9 @@ contract MainnetController_AaveV4_TwoSpoke_Tests is AaveV4_TestBase {
         // Stage 7: full Main WETH withdraw restores Main WETH capacity only.
         vm.prank(allocator);
         uint256 wethWithdrawn = mainnetController.aaveV4_withdraw(MAIN_SPOKE, MAIN_WETH_RESERVE_ID, type(uint256).max);
-        assertApproxEqAbs(wethWithdrawn, 100e18, 10);
+        assertEq(wethWithdrawn, 100e18 - 1);
 
-        assertApproxEqAbs(rateLimits.getCurrentRateLimit(mainWethDepositKey), wethLimit, 10);
+        assertEq(rateLimits.getCurrentRateLimit(mainWethDepositKey), wethLimit - 1);
         assertEq(rateLimits.getCurrentRateLimit(mainUsdcDepositKey), 0);
         assertEq(_suppliedAssets(MAIN_SPOKE, MAIN_WETH_RESERVE_ID),  0);
 

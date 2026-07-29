@@ -27,7 +27,7 @@ interface IAaveV4Facet is IFacet {
      * @notice Emitted when the max slippage for an Aave V4 market is updated.
      * @param  spoke       Address of the spoke hosting the market.
      * @param  reserveId   Reserve identifier on the spoke.
-     * @param  maxSlippage New max slippage in 1e18 precision (higher = stricter, always < 1e18).
+     * @param  maxSlippage New max slippage in 1e18 precision (1e18 = no slippage).
      */
     event AaveV4MaxSlippageSet(
         address indexed spoke,
@@ -61,11 +61,12 @@ interface IAaveV4Facet is IFacet {
 
     /**
      * @notice Sets the max slippage for deposit operations on a given `(spoke, reserveId)` market.
-     * @dev    Must be strictly below 1e18: an exact 1:1 requirement is only satisfiable while the
-     *         share price is exactly 1:1 and reverts every deposit once the reserve accrues interest.
+     * @dev    A tolerance of 1e18 or above demands a supplied position at least equal to the amount
+     *         deposited, which the reserve's round-down share accounting never returns, so every
+     *         deposit into the market would revert.
      * @param  spoke       Address of the spoke hosting the market.
      * @param  reserveId   Reserve identifier on the spoke.
-     * @param  maxSlippage Max slippage in 1e18 precision (higher = stricter, must be < 1e18).
+     * @param  maxSlippage Max slippage in 1e18 precision (1e18 = no slippage).
      */
     function setMaxSlippage(address spoke, uint256 reserveId, uint256 maxSlippage) external;
 

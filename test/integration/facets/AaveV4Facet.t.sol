@@ -105,26 +105,6 @@ contract Controller_AaveV4Facet_Tests is Integration_TestBase {
         controller.setMaxSlippage(address(0), 2, 0.98e18);
     }
 
-    function test_setMaxSlippage_maxSlippageTooHigh() external {
-        address spoke = makeAddr("spoke");
-
-        vm.startPrank(admin);
-
-        // 1e18 (and above) is rejected: an exact 1:1 requirement reverts once interest accrues.
-        vm.expectRevert("AaveV4Facet/invalid-max-slippage");
-        controller.setMaxSlippage(spoke, 2, 1e18);
-
-        vm.expectRevert("AaveV4Facet/invalid-max-slippage");
-        controller.setMaxSlippage(spoke, 2, 1e18 + 1);
-
-        // The largest valid tolerance is one wei below 1e18.
-        controller.setMaxSlippage(spoke, 2, 1e18 - 1);
-
-        vm.stopPrank();
-
-        assertEq(controller.getMaxSlippage(spoke, 2), 1e18 - 1);
-    }
-
     function test_setMaxSlippage() external {
         address spoke     = makeAddr("spoke");
         uint256 reserveId = 2;

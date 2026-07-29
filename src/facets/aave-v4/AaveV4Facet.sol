@@ -96,7 +96,6 @@ contract AaveV4Facet is IAaveV4Facet, Facet {
         onlyRole(DEFAULT_ADMIN_ROLE)
     {
         require(spoke != address(0), "AaveV4Facet/spoke-zero-address");
-        require(maxSlippage < 1e18,  "AaveV4Facet/invalid-max-slippage");
 
         _getFacetStorage().maxSlippages[spoke][reserveId] = maxSlippage;
 
