@@ -20,7 +20,9 @@ The central property this document needs to make explicit for risk planning:
 
 ## 1. Target topology
 
-<!-- <Excalidraw diagram> -->
+<p align="center">
+  <img src="./multicontroller.png" alt="Parallet controller setup" height="700px" style="margin-right:100px;"/>
+</p>
 
 `ALLOCATOR_ROLE` is held by the `AdministeredAgent` on `AccessControls`, not on the Controller itself.
 The Controller and its facets hold no role state of their own: every `onlyRole` check, for both
