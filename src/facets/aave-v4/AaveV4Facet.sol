@@ -120,6 +120,7 @@ contract AaveV4Facet is IAaveV4Facet, Facet {
         address proxy = _getSharedControllerStorage().proxy;
 
         IAaveV4SpokeLike.Reserve memory reserve = IAaveV4SpokeLike(spoke).getReserve(reserveId);
+
         address underlying = reserve.underlying;
 
         // Block deposits when the Hub asset carries any deficit: supplying against unbacked debt
@@ -177,8 +178,15 @@ contract AaveV4Facet is IAaveV4Facet, Facet {
         // Measure the amount actually received rather than trusting the return value.
         amountWithdrawn = IERC20Like(underlying).balanceOf(proxy) - startingBalance;
 
-        _decreaseRateLimit(getWithdrawRateLimitKey(spoke, reserveId),               amountWithdrawn);
-        _tryIncreaseRateLimit(getDepositRateLimitKey(spoke, reserveId, underlying), amountWithdrawn);
+        _decreaseRateLimit(
+            getWithdrawRateLimitKey(spoke, reserveId),
+            amountWithdrawn
+        );
+
+        _tryIncreaseRateLimit(
+            getDepositRateLimitKey(spoke, reserveId, underlying),
+            amountWithdrawn
+        );
 
         emit AaveV4Withdraw(spoke, reserveId, amountWithdrawn);
     }
