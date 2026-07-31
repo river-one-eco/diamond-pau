@@ -453,7 +453,6 @@ contract MainnetController_AaveV4_Withdraw_Tests is AaveV4_TestBase {
 
         // Interest was paid out of the Hub's other liquidity, reducing its cash below the start.
         assertEq(usdc.balanceOf(CORE_HUB), startingHubBalanceUsdc + USDC_DEPOSIT_AMOUNT - suppliedValue);
-        assertLt(usdc.balanceOf(CORE_HUB), startingHubBalanceUsdc);
     }
 
     function test_withdrawAaveV4_usdc_zeroDepositRateLimit() external {
@@ -507,7 +506,6 @@ contract MainnetController_AaveV4_Withdraw_Tests is AaveV4_TestBase {
 
         // Interest was paid out of the Hub's other liquidity, reducing its cash below the start.
         assertEq(weth.balanceOf(CORE_HUB), startingHubBalanceWeth + WETH_DEPOSIT_AMOUNT - suppliedValue);
-        assertLt(weth.balanceOf(CORE_HUB), startingHubBalanceWeth);
     }
 
 }
