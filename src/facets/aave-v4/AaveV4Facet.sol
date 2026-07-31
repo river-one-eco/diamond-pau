@@ -4,7 +4,7 @@ pragma solidity ^0.8.34;
 import { ApproveLib } from "../../libraries/ApproveLib.sol";
 
 import {
-    makeAddressUint256AddressKey,
+    makeAddressUint256AddressUint16AddressKey,
     makeAddressUint256Key
 } from "../../libraries/RateLimitHelpers.sol";
 
@@ -130,7 +130,10 @@ contract AaveV4Facet is IAaveV4Facet, Facet {
             "AaveV4Facet/asset-deficit"
         );
 
-        _decreaseRateLimit(getDepositRateLimitKey(spoke, reserveId, underlying), amount);
+        _decreaseRateLimit(
+            getDepositRateLimitKey(spoke, reserveId, reserve.hub, reserve.assetId, underlying),
+            amount
+        );
 
         // Approve underlying to the spoke from the proxy (assumes the proxy has enough underlying).
         ApproveLib.approve(underlying, proxy, spoke, amount);
@@ -163,8 +166,11 @@ contract AaveV4Facet is IAaveV4Facet, Facet {
         onlyRole(ALLOCATOR_ROLE)
         returns (uint256 amountWithdrawn)
     {
-        address proxy      = _getSharedControllerStorage().proxy;
-        address underlying = IAaveV4SpokeLike(spoke).getReserve(reserveId).underlying;
+        address proxy = _getSharedControllerStorage().proxy;
+
+        IAaveV4SpokeLike.Reserve memory reserve = IAaveV4SpokeLike(spoke).getReserve(reserveId);
+
+        address underlying = reserve.underlying;
 
         uint256 startingBalance = IERC20Like(underlying).balanceOf(proxy);
 
@@ -183,8 +189,10 @@ contract AaveV4Facet is IAaveV4Facet, Facet {
             amountWithdrawn
         );
 
+        // The withdraw key omits the reserve-derived values, so a remapped reserve can still be
+        // exited; only the restore below is skipped, since it resolves to an unconfigured key.
         _tryIncreaseRateLimit(
-            getDepositRateLimitKey(spoke, reserveId, underlying),
+            getDepositRateLimitKey(spoke, reserveId, reserve.hub, reserve.assetId, underlying),
             amountWithdrawn
         );
 
@@ -206,13 +214,26 @@ contract AaveV4Facet is IAaveV4Facet, Facet {
     }
 
     /// @inheritdoc IAaveV4Facet
-    function getDepositRateLimitKey(address spoke, uint256 reserveId, address underlying)
+    function getDepositRateLimitKey(
+        address spoke,
+        uint256 reserveId,
+        address hub,
+        uint16  assetId,
+        address underlying
+    )
         public
         pure
         override
         returns (bytes32)
     {
-        return makeAddressUint256AddressKey(_LIMIT_DEPOSIT, spoke, reserveId, underlying);
+        return makeAddressUint256AddressUint16AddressKey(
+            _LIMIT_DEPOSIT,
+            spoke,
+            reserveId,
+            hub,
+            assetId,
+            underlying
+        );
     }
 
     /// @inheritdoc IAaveV4Facet

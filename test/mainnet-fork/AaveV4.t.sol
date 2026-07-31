@@ -36,8 +36,8 @@ abstract contract AaveV4_TestBase is ForkTestBase {
     uint256 internal constant MAIN_WETH_RESERVE_ID  = 0;  // WETH (18 decimals), Core Hub assetId 0
     uint256 internal constant FOREX_USDC_RESERVE_ID = 1;  // USDC (6 decimals),  Core Hub assetId 5
 
-    uint256 internal constant USDC_ASSET_ID = 5;
-    uint256 internal constant WETH_ASSET_ID = 0;
+    uint16 internal constant USDC_ASSET_ID = 5;
+    uint16 internal constant WETH_ASSET_ID = 0;
 
     // Controller-side deposit limits sit above Aave's on-chain supply caps, so they only bind in the
     // dedicated rate-limit boundary tests.
@@ -65,11 +65,11 @@ abstract contract AaveV4_TestBase is ForkTestBase {
     function setUp() public virtual override {
         super.setUp();
 
-        mainUsdcDepositKey   = mainnetController.aaveV4_getDepositRateLimitKey(MAIN_SPOKE,   MAIN_USDC_RESERVE_ID, address(usdc));
+        mainUsdcDepositKey   = mainnetController.aaveV4_getDepositRateLimitKey(MAIN_SPOKE,   MAIN_USDC_RESERVE_ID,  CORE_HUB, USDC_ASSET_ID, address(usdc));
         mainUsdcWithdrawKey  = mainnetController.aaveV4_getWithdrawRateLimitKey(MAIN_SPOKE,  MAIN_USDC_RESERVE_ID);
-        mainWethDepositKey   = mainnetController.aaveV4_getDepositRateLimitKey(MAIN_SPOKE,   MAIN_WETH_RESERVE_ID, address(weth));
+        mainWethDepositKey   = mainnetController.aaveV4_getDepositRateLimitKey(MAIN_SPOKE,   MAIN_WETH_RESERVE_ID,  CORE_HUB, WETH_ASSET_ID, address(weth));
         mainWethWithdrawKey  = mainnetController.aaveV4_getWithdrawRateLimitKey(MAIN_SPOKE,  MAIN_WETH_RESERVE_ID);
-        forexUsdcDepositKey  = mainnetController.aaveV4_getDepositRateLimitKey(FOREX_SPOKE,  FOREX_USDC_RESERVE_ID, address(usdc));
+        forexUsdcDepositKey  = mainnetController.aaveV4_getDepositRateLimitKey(FOREX_SPOKE,  FOREX_USDC_RESERVE_ID, CORE_HUB, USDC_ASSET_ID, address(usdc));
         forexUsdcWithdrawKey = mainnetController.aaveV4_getWithdrawRateLimitKey(FOREX_SPOKE, FOREX_USDC_RESERVE_ID);
 
         vm.startPrank(Ethereum.SPARK_PROXY);

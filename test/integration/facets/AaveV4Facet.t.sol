@@ -7,7 +7,7 @@ import { IAaveV4Facet }            from "../../../src/facets/aave-v4/IAaveV4Face
 import { IEnumerableIntegrations } from "../../../src/interfaces/IEnumerableIntegrations.sol";
 
 import {
-    makeAddressUint256AddressKey,
+    makeAddressUint256AddressUint16AddressKey,
     makeAddressUint256Key
 } from "../../../src/libraries/RateLimitHelpers.sol";
 
@@ -21,7 +21,13 @@ interface IControllerLike {
 
     function getMaxSlippage(address spoke, uint256 reserveId) external view returns (uint256);
 
-    function getDepositRateLimitKey(address spoke, uint256 reserveId, address underlying)
+    function getDepositRateLimitKey(
+        address spoke,
+        uint256 reserveId,
+        address hub,
+        uint16  assetId,
+        address underlying
+    )
         external
         pure
         returns (bytes32);
@@ -151,11 +157,13 @@ contract Controller_AaveV4Facet_Tests is Integration_TestBase {
         bytes32 keyPrefix  = keccak256("LIMIT_AAVE_V4_DEPOSIT");
         address spoke      = makeAddr("spoke");
         uint256 reserveId  = 2;
+        address hub        = makeAddr("hub");
+        uint16  assetId    = 5;
         address underlying = makeAddr("underlying");
 
         assertEq(
-            controller.getDepositRateLimitKey(spoke, reserveId, underlying),
-            makeAddressUint256AddressKey(keyPrefix, spoke, reserveId, underlying)
+            controller.getDepositRateLimitKey(spoke, reserveId, hub, assetId, underlying),
+            makeAddressUint256AddressUint16AddressKey(keyPrefix, spoke, reserveId, hub, assetId, underlying)
         );
     }
 
