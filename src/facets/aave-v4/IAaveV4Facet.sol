@@ -88,10 +88,6 @@ interface IAaveV4Facet is IFacet {
 
     /**
      * @notice Returns the derived deposit rate limit key for a given `(spoke, reserveId)` market.
-     * @dev    Every value the deposit path reads off the reserve is part of the key, so a spoke
-     *         that remaps a reserve cannot reuse a budget configured for the original market. The
-     *         hub and asset id are included because the deficit guard queries them before
-     *         supplying, and the underlying because it is the asset that leaves the proxy.
      * @param  spoke      Address of the spoke hosting the market.
      * @param  reserveId  Reserve identifier on the spoke.
      * @param  hub        Hub the reserve settles against.

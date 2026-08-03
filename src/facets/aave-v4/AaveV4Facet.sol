@@ -184,10 +184,7 @@ contract AaveV4Facet is IAaveV4Facet, Facet {
         // Measure the amount actually received rather than trusting the return value.
         amountWithdrawn = IERC20Like(underlying).balanceOf(proxy) - startingBalance;
 
-        _decreaseRateLimit(
-            getWithdrawRateLimitKey(spoke, reserveId),
-            amountWithdrawn
-        );
+        _decreaseRateLimit(getWithdrawRateLimitKey(spoke, reserveId), amountWithdrawn);
 
         // The withdraw key omits the reserve-derived values, so a remapped reserve can still be
         // exited; only the restore below is skipped, since it resolves to an unconfigured key.

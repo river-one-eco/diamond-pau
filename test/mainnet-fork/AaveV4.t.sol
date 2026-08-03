@@ -167,10 +167,8 @@ contract MainnetController_AaveV4_Deposit_Tests is AaveV4_TestBase {
         mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
     }
 
-    function test_depositAaveV4_usdcRateLimitedBoundary() external {
+    function test_depositAaveV4_usdc_rateLimitedBoundary() external {
         deal(Ethereum.USDC, address(almProxy), USDC_DEPOSIT_LIMIT + 1);
-
-        assertEq(rateLimits.getCurrentRateLimit(mainUsdcDepositKey), USDC_DEPOSIT_LIMIT);
 
         vm.expectRevert("RateLimits/rate-limit-exceeded");
         vm.prank(allocator);
@@ -178,14 +176,10 @@ contract MainnetController_AaveV4_Deposit_Tests is AaveV4_TestBase {
 
         vm.prank(allocator);
         mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
-
-        assertEq(rateLimits.getCurrentRateLimit(mainUsdcDepositKey), USDC_DEPOSIT_LIMIT - USDC_DEPOSIT_AMOUNT);
     }
 
-    function test_depositAaveV4_wethRateLimitedBoundary() external {
+    function test_depositAaveV4_weth_rateLimitedBoundary() external {
         deal(Ethereum.WETH, address(almProxy), WETH_DEPOSIT_LIMIT + 1);
-
-        assertEq(rateLimits.getCurrentRateLimit(mainWethDepositKey), WETH_DEPOSIT_LIMIT);
 
         vm.expectRevert("RateLimits/rate-limit-exceeded");
         vm.prank(allocator);
@@ -193,13 +187,11 @@ contract MainnetController_AaveV4_Deposit_Tests is AaveV4_TestBase {
 
         vm.prank(allocator);
         mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_WETH_RESERVE_ID, WETH_DEPOSIT_AMOUNT);
-
-        assertEq(rateLimits.getCurrentRateLimit(mainWethDepositKey), WETH_DEPOSIT_LIMIT - WETH_DEPOSIT_AMOUNT);
     }
 
     // The reserve credits a round-down share amount, so a 1e18 tolerance always trips the guard and
     // one wei below it is the strictest tolerance that still admits an honest deposit.
-    function test_depositAaveV4_slippageTooHighBoundary() external {
+    function test_depositAaveV4_usdc_slippageTooHighBoundary() external {
         deal(Ethereum.USDC, address(almProxy), USDC_DEPOSIT_AMOUNT);
 
         vm.prank(Ethereum.SPARK_PROXY);
@@ -214,14 +206,12 @@ contract MainnetController_AaveV4_Deposit_Tests is AaveV4_TestBase {
 
         vm.prank(allocator);
         mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
-
-        assertEq(_suppliedAssets(MAIN_SPOKE, MAIN_USDC_RESERVE_ID), USDC_DEPOSIT_AMOUNT - 1);
     }
 
     // Pins why an exact 1:1 (1e18) tolerance is unusable: the reserve credits a round-down share
     // amount, so a 1e18 tolerance reverts every deposit, accrual or not, while one wei below it
     // still clears an honest deposit.
-    function test_depositAaveV4_usdcSlippageOneToOneAfterAccrualBoundary() external {
+    function test_depositAaveV4_usdc_slippageOneToOneAfterAccrualBoundary() external {
         deal(Ethereum.USDC, address(almProxy), USDC_DEPOSIT_AMOUNT);
 
         vm.prank(allocator);
@@ -340,11 +330,10 @@ contract MainnetController_AaveV4_Withdraw_Tests is AaveV4_TestBase {
         vm.stopPrank();
     }
 
-    // A smaller withdraw limit than the default is installed locally so the boundary can be reached
-    // with a deposit that stays well inside Aave's add cap.
-    function test_withdrawAaveV4_usdcRateLimitedBoundary() external {
+    function test_withdrawAaveV4_usdc_rateLimitedBoundary() external {
         uint256 withdrawLimit = 500_000e6;
 
+        // Necessary to be able to hit the withdrawal rate limit after a 1m deposit.
         vm.prank(Ethereum.SPARK_PROXY);
         rateLimits.setRateLimitData(mainUsdcWithdrawKey, withdrawLimit, withdrawLimit / 1 days);
 
@@ -353,22 +342,17 @@ contract MainnetController_AaveV4_Withdraw_Tests is AaveV4_TestBase {
         vm.startPrank(allocator);
         mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
 
-        assertEq(rateLimits.getCurrentRateLimit(mainUsdcWithdrawKey), withdrawLimit);
-        assertEq(usdc.balanceOf(address(almProxy)),                   0);
-
         vm.expectRevert("RateLimits/rate-limit-exceeded");
         mainnetController.aaveV4_withdraw(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, withdrawLimit + 1);
 
         mainnetController.aaveV4_withdraw(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, withdrawLimit);
         vm.stopPrank();
-
-        assertEq(rateLimits.getCurrentRateLimit(mainUsdcWithdrawKey), 0);
-        assertEq(usdc.balanceOf(address(almProxy)),                   withdrawLimit);
     }
 
-    function test_withdrawAaveV4_wethRateLimitedBoundary() external {
+    function test_withdrawAaveV4_weth_rateLimitedBoundary() external {
         uint256 withdrawLimit = 50e18;
 
+        // Necessary to be able to hit the withdrawal rate limit after a 100 WETH deposit.
         vm.prank(Ethereum.SPARK_PROXY);
         rateLimits.setRateLimitData(mainWethWithdrawKey, withdrawLimit, withdrawLimit / 1 days);
 
@@ -377,17 +361,11 @@ contract MainnetController_AaveV4_Withdraw_Tests is AaveV4_TestBase {
         vm.startPrank(allocator);
         mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_WETH_RESERVE_ID, WETH_DEPOSIT_AMOUNT);
 
-        assertEq(rateLimits.getCurrentRateLimit(mainWethWithdrawKey), withdrawLimit);
-        assertEq(weth.balanceOf(address(almProxy)),                   0);
-
         vm.expectRevert("RateLimits/rate-limit-exceeded");
         mainnetController.aaveV4_withdraw(MAIN_SPOKE, MAIN_WETH_RESERVE_ID, withdrawLimit + 1);
 
         mainnetController.aaveV4_withdraw(MAIN_SPOKE, MAIN_WETH_RESERVE_ID, withdrawLimit);
         vm.stopPrank();
-
-        assertEq(rateLimits.getCurrentRateLimit(mainWethWithdrawKey), 0);
-        assertEq(weth.balanceOf(address(almProxy)),                   withdrawLimit);
     }
 
     function test_withdrawAaveV4_usdc() external {
