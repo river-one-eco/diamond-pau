@@ -127,8 +127,6 @@ contract MainnetController_AaveV4_Deposit_Tests is AaveV4_TestBase {
         vm.prank(Ethereum.SPARK_PROXY);
         mainnetController.aaveV4_setMaxSlippage(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 0);
 
-        deal(Ethereum.USDC, address(almProxy), USDC_DEPOSIT_AMOUNT);
-
         vm.expectRevert("AaveV4Facet/max-slippage-not-set");
         vm.prank(allocator);
         mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
@@ -433,25 +431,6 @@ contract MainnetController_AaveV4_Withdraw_Tests is AaveV4_TestBase {
         assertEq(usdc.balanceOf(CORE_HUB), startingHubBalanceUsdc + USDC_DEPOSIT_AMOUNT - suppliedValue);
     }
 
-    function test_withdrawAaveV4_usdc_zeroDepositRateLimit() external {
-        deal(Ethereum.USDC, address(almProxy), USDC_DEPOSIT_AMOUNT);
-
-        vm.prank(allocator);
-        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
-
-        // Zero deposit rate limit
-        vm.prank(Ethereum.SPARK_PROXY);
-        rateLimits.setRateLimitData(mainUsdcDepositKey, 0, 0);
-
-        assertEq(rateLimits.getCurrentRateLimit(mainUsdcDepositKey), 0);
-
-        // Partial withdraw; the deposit restore is skipped
-        vm.prank(allocator);
-        assertEq(mainnetController.aaveV4_withdraw(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 400_000e6), 400_000e6);
-
-        assertEq(rateLimits.getCurrentRateLimit(mainUsdcDepositKey), 0);  // Stays at 0
-    }
-
     function test_withdrawAaveV4_weth() external {
         deal(Ethereum.WETH, address(almProxy), WETH_DEPOSIT_AMOUNT);
 
@@ -484,6 +463,25 @@ contract MainnetController_AaveV4_Withdraw_Tests is AaveV4_TestBase {
 
         // Interest was paid out of the Hub's other liquidity, reducing its cash below the start.
         assertEq(weth.balanceOf(CORE_HUB), startingHubBalanceWeth + WETH_DEPOSIT_AMOUNT - suppliedValue);
+    }
+
+    function test_withdrawAaveV4_usdc_zeroDepositRateLimit() external {
+        deal(Ethereum.USDC, address(almProxy), USDC_DEPOSIT_AMOUNT);
+
+        vm.prank(allocator);
+        mainnetController.aaveV4_deposit(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, USDC_DEPOSIT_AMOUNT);
+
+        // Zero deposit rate limit
+        vm.prank(Ethereum.SPARK_PROXY);
+        rateLimits.setRateLimitData(mainUsdcDepositKey, 0, 0);
+
+        assertEq(rateLimits.getCurrentRateLimit(mainUsdcDepositKey), 0);
+
+        // Partial withdraw; the deposit restore is skipped
+        vm.prank(allocator);
+        assertEq(mainnetController.aaveV4_withdraw(MAIN_SPOKE, MAIN_USDC_RESERVE_ID, 400_000e6), 400_000e6);
+
+        assertEq(rateLimits.getCurrentRateLimit(mainUsdcDepositKey), 0);  // Stays at 0
     }
 
 }
