@@ -9,7 +9,7 @@ import { IEnumerableIntegrations } from "../../src/interfaces/IEnumerableIntegra
 import { Controller }              from "../../src/Controller.sol";
 import { ControllerSharedStorage } from "../../src/ControllerSharedStorage.sol";
 
-import { UnitTestBase } from "./UnitTestBase.t.sol";
+import { UnitTests } from "./UnitTests.t.sol";
 
 contract ControllerHarness is Controller {
 
@@ -93,7 +93,7 @@ contract FacetAlteringSharedStorage is ControllerSharedStorage {
 
 }
 
-contract Controller_Tests is UnitTestBase {
+contract Controller_Tests is UnitTests {
 
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.ReentrancyGuard")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 internal constant REENTRANCY_GUARD_SLOT        = 0x9b779b17422d0df92223018b32b4d1fa46e071723d6817e2486d003becc55f00;

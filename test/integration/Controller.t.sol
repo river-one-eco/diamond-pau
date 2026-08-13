@@ -7,7 +7,7 @@ import { ReentrancyGuard } from "../../lib/openzeppelin-contracts/contracts/util
 import { IController }             from "../../src/interfaces/IController.sol";
 import { IEnumerableIntegrations } from "../../src/interfaces/IEnumerableIntegrations.sol";
 
-import { Integration_TestBase } from "./TestBase.t.sol";
+import { IntegrationTests } from "./IntegrationTests.t.sol";
 
 contract MockFacet1 {
 
@@ -49,7 +49,7 @@ interface IMockController is IController {
 
 }
 
-contract Controller_IntegrationTests is Integration_TestBase {
+contract Controller_IntegrationTests is IntegrationTests {
 
     IMockController internal controller;
 

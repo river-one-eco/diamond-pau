@@ -10,7 +10,7 @@ import { IEnumerableIntegrations } from "../../src/interfaces/IEnumerableIntegra
 
 import { Beacon } from "../../src/Beacon.sol";
 
-import { Integration_TestBase } from "./TestBase.t.sol";
+import { IntegrationTests } from "./IntegrationTests.t.sol";
 
 contract MockFacet1 {
 
@@ -36,7 +36,7 @@ contract MockFacet2 {
 
 }
 
-contract Beacon_IntegrationTests is Integration_TestBase {
+contract Beacon_IntegrationTests is IntegrationTests {
 
     function setUp() external {
         _deploy();

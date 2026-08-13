@@ -16,7 +16,7 @@ import { IEnumerableIntegrations } from "../../src/interfaces/IEnumerableIntegra
 
 import { Beacon } from "../../src/Beacon.sol";
 
-import { UnitTestBase } from "./UnitTestBase.t.sol";
+import { UnitTests } from "./UnitTests.t.sol";
 
 contract MockFacet {
 
@@ -82,7 +82,7 @@ contract BeaconHarness is Beacon {
 
 }
 
-contract Beacon_Tests is UnitTestBase {
+contract Beacon_Tests is UnitTests {
 
     BeaconHarness internal beacon;
 

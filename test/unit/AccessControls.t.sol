@@ -9,7 +9,7 @@ import { IAccessControls } from "../../src/interfaces/IAccessControls.sol";
 
 import { AccessControls } from "../../src/AccessControls.sol";
 
-import { UnitTestBase } from "./UnitTestBase.t.sol";
+import { UnitTests } from "./UnitTests.t.sol";
 
 contract AccessControlsHarness is AccessControls {
 
@@ -25,7 +25,7 @@ contract AccessControlsHarness is AccessControls {
 
 }
 
-contract AccessControls_Tests is UnitTestBase {
+contract AccessControls_Tests is UnitTests {
 
     address internal deployer = makeAddr("deployer");
 
