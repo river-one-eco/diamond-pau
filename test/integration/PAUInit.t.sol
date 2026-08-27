@@ -163,10 +163,17 @@ contract PAUInit_Integration_Tests is Test {
     function test_init_emptyIntegrationIds_skipsUpdate() external {
         PAUInstance memory inst = _deployStack(address(governance));
 
-        // Empty array must not revert (the Controller reverts on an empty updateIntegrations).
+        // With no IDs, init must NOT reach updateIntegrations (the Controller reverts on an empty
+        // array), so no integration ends up registered.
+        vm.expectCall(
+            inst.controller,
+            abi.encodeWithSelector(IController.updateIntegrations.selector),
+            0
+        );
+
         governance.initPAU(inst, new bytes32[](0));
 
-        assertTrue(_controllerRoleGranted(inst.almProxy, inst.controller));
+        assertEq(IControllerIntegrationsLike(inst.controller).integrations().length, 0);
     }
 
     function test_init_mismatchedAccessControls_reverts() external {
