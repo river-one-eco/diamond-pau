@@ -7,8 +7,6 @@ interface IAccessControlLike {
 
     function hasRole(bytes32 role, address account) external view returns (bool);
 
-    function revokeRole(bytes32 role, address account) external;
-
 }
 
 interface IALMProxyLike {
