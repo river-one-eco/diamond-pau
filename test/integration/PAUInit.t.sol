@@ -95,6 +95,24 @@ contract PAUInit_Integration_Tests is Test {
         inst.beacon         = address(beacon);
     }
 
+    // Like `_deployStack`, but with an independent admin per component so individual admin sanity
+    // checks in PAUInit.init can be exercised. The Controller's immutable wiring is unaffected.
+    function _deployStackWithAdmins(
+        address accessControlsAdmin,
+        address almProxyAdmin,
+        address rateLimitsAdmin
+    )
+        internal
+        returns (PAUInstance memory inst)
+    {
+        inst.accessControls = factory.deployAccessControls(accessControlsAdmin);
+        inst.almProxy       = factory.deployALMProxy(almProxyAdmin);
+        inst.rateLimits     = factory.deployRateLimits(rateLimitsAdmin);
+        inst.controller     =
+            factory.deployController(inst.accessControls, inst.almProxy, inst.rateLimits);
+        inst.beacon         = address(beacon);
+    }
+
     function _controllerRoleGranted(address component, address controller)
         internal
         view
@@ -189,6 +207,49 @@ contract PAUInit_Integration_Tests is Test {
 
         vm.expectRevert(bytes("PAUInit/not-access-controls-admin"));
         governance.initPAU(inst, new bytes32[](0));
+    }
+
+    function test_init_notAlmProxyAdmin_reverts() external {
+        // Admin on AccessControls but not on the ALMProxy: the second admin check must catch it.
+        PAUInstance memory inst = _deployStackWithAdmins(
+            address(governance),   // accessControls
+            makeAddr("otherAdmin"), // almProxy
+            address(governance)    // rateLimits
+        );
+
+        vm.expectRevert(bytes("PAUInit/not-alm-proxy-admin"));
+        governance.initPAU(inst, new bytes32[](0));
+    }
+
+    function test_init_notRateLimitsAdmin_reverts() external {
+        // Admin on AccessControls and ALMProxy but not on RateLimits: the third admin check catches it.
+        PAUInstance memory inst = _deployStackWithAdmins(
+            address(governance),   // accessControls
+            address(governance),   // almProxy
+            makeAddr("otherAdmin") // rateLimits
+        );
+
+        vm.expectRevert(bytes("PAUInit/not-rate-limits-admin"));
+        governance.initPAU(inst, new bytes32[](0));
+    }
+
+    function test_init_nonEmptyIntegrationIds_syncsToController() external {
+        PAUInstance memory inst = _deployStack(address(governance));
+
+        bytes32[] memory ids = new bytes32[](2);
+        ids[0] = "INTEGRATION_1";
+        ids[1] = "INTEGRATION_2";
+        _registerIntegration(ids[0]);
+        _registerIntegration(ids[1]);
+
+        governance.initPAU(inst, ids);
+
+        // Both the structural role wiring and the integration sync happen in one call.
+        assertTrue(_controllerRoleGranted(inst.almProxy,   inst.controller));
+        assertTrue(_controllerRoleGranted(inst.rateLimits, inst.controller));
+        assertTrue(_integrationSet(inst.controller, ids[0]));
+        assertTrue(_integrationSet(inst.controller, ids[1]));
+        assertEq(IControllerIntegrationsLike(inst.controller).integrations().length, 2);
     }
 
     /**********************************************************************************************/
