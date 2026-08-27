@@ -3,6 +3,8 @@ pragma solidity ^0.8.34;
 
 interface IAccessControlLike {
 
+    function getRoleMemberCount(bytes32 role) external view returns (uint256);
+
     function grantRole(bytes32 role, address account) external;
 
     function hasRole(bytes32 role, address account) external view returns (bool);
@@ -92,6 +94,12 @@ library PAUInit {
         require(
             IAccessControlLike(inst.accessControls).hasRole(DEFAULT_ADMIN_ROLE, address(this)),
             "PAUInit/not-access-controls-admin"
+        );
+        // AccessControls is the sole enumerable component (ALMProxy/RateLimits use non-enumerable
+        // AccessControl), so this is the one place we can assert governance is the *only* admin.
+        require(
+            IAccessControlLike(inst.accessControls).getRoleMemberCount(DEFAULT_ADMIN_ROLE) == 1,
+            "PAUInit/access-controls-not-sole-admin"
         );
         require(
             IAccessControlLike(inst.almProxy).hasRole(DEFAULT_ADMIN_ROLE, address(this)),

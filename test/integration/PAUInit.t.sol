@@ -12,6 +12,7 @@ import { IEnumerableIntegrations } from "../../src/interfaces/IEnumerableIntegra
 import { PAUInit, PAUInstance } from "../../deploy/PAUInit.sol";
 
 interface IAccessControlLike {
+    function grantRole(bytes32 role, address account) external;
     function hasRole(bytes32 role, address account) external view returns (bool);
 }
 
@@ -213,6 +214,18 @@ contract PAUInit_Integration_Tests is Test {
         PAUInstance memory inst = _deployStack(makeAddr("otherAdmin"));
 
         vm.expectRevert(bytes("PAUInit/not-access-controls-admin"));
+        governance.initPAU(inst, new bytes32[](0));
+    }
+
+    function test_init_accessControlsNotSoleAdmin_reverts() external {
+        PAUInstance memory inst = _deployStack(address(governance));
+
+        // Governance is admin, but a second DEFAULT_ADMIN_ROLE holder means it is not the *sole*
+        // admin, so init must reject the stack.
+        vm.prank(address(governance));
+        IAccessControlLike(inst.accessControls).grantRole(DEFAULT_ADMIN_ROLE, makeAddr("secondAdmin"));
+
+        vm.expectRevert(bytes("PAUInit/access-controls-not-sole-admin"));
         governance.initPAU(inst, new bytes32[](0));
     }
 
