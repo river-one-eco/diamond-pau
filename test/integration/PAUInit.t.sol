@@ -6,6 +6,9 @@ import { Test } from "../../lib/forge-std/src/Test.sol";
 import { Beacon }     from "../../src/Beacon.sol";
 import { PAUFactory } from "../../src/PAUFactory.sol";
 
+import { IController }             from "../../src/interfaces/IController.sol";
+import { IEnumerableIntegrations } from "../../src/interfaces/IEnumerableIntegrations.sol";
+
 import { PAUInit, PAUInstance } from "../../deploy/PAUInit.sol";
 
 interface IAccessControlLike {
@@ -19,6 +22,14 @@ interface IALMProxyLike {
 interface IRateLimitsLike {
     function CONTROLLER() external view returns (bytes32);
 }
+
+interface IControllerIntegrationsLike {
+    function getConfig(bytes32 id) external view returns (IEnumerableIntegrations.Config memory);
+    function integrations() external view returns (IEnumerableIntegrations.Integration[] memory);
+}
+
+// Minimal facet stand-in: registering an integration only requires the facet to have code.
+contract MockFacet {}
 
 /**
  * @notice Governance-proxy stand-in (PauseProxy / SubProxy) executing a spell action. PAUInit is
@@ -36,6 +47,14 @@ contract GovernanceHarness {
         PAUInit.addAllocator(inst, agent);
     }
 
+    function setIntegrations(PAUInstance memory inst, bytes32[] memory ids) external {
+        PAUInit.setIntegrations(inst, ids);
+    }
+
+    function removeIntegrations(PAUInstance memory inst, bytes32[] memory ids) external {
+        PAUInit.removeIntegrations(inst, ids);
+    }
+
 }
 
 contract PAUInit_Integration_Tests is Test {
@@ -48,10 +67,17 @@ contract PAUInit_Integration_Tests is Test {
     Beacon     internal beacon;
     PAUFactory internal factory;
 
+    address internal beaconAdmin;
+
+    // Monotonic source of unique call selectors so registrations never collide on the beacon's
+    // global dispatch table.
+    uint32 internal wireNonce;
+
     function setUp() external {
-        governance = new GovernanceHarness();
-        beacon     = new Beacon(makeAddr("beaconAdmin"));
-        factory    = new PAUFactory(address(beacon));
+        governance  = new GovernanceHarness();
+        beaconAdmin = makeAddr("beaconAdmin");
+        beacon      = new Beacon(beaconAdmin);
+        factory     = new PAUFactory(address(beacon));
     }
 
     /**********************************************************************************************/
@@ -78,6 +104,25 @@ contract PAUInit_Integration_Tests is Test {
             IALMProxyLike(component).CONTROLLER(),
             controller
         );
+    }
+
+    // Register `id` on the beacon (as its admin) with a fresh mock facet and a unique wire, so the
+    // Controller's updateIntegrations accepts it.
+    function _registerIntegration(bytes32 id) internal {
+        IEnumerableIntegrations.Wire[] memory wires = new IEnumerableIntegrations.Wire[](1);
+        wires[0] = IEnumerableIntegrations.Wire(bytes4(++wireNonce), bytes4(bytes32(uint256(0xf))));
+
+        IEnumerableIntegrations.Config memory config = IEnumerableIntegrations.Config({
+            facet : address(new MockFacet()),
+            wires : wires
+        });
+
+        vm.prank(beaconAdmin);
+        beacon.setIntegration(id, config);
+    }
+
+    function _integrationSet(address controller, bytes32 id) internal view returns (bool) {
+        return IControllerIntegrationsLike(controller).getConfig(id).facet != address(0);
     }
 
     /**********************************************************************************************/
@@ -167,6 +212,121 @@ contract PAUInit_Integration_Tests is Test {
 
         vm.expectRevert(bytes("PAUInit/agent-zero-address"));
         governance.addAllocator(inst, address(0));
+    }
+
+    /**********************************************************************************************/
+    /*** setIntegrations Tests                                                                  ***/
+    /**********************************************************************************************/
+
+    function test_setIntegrations_syncsToController() external {
+        PAUInstance memory inst = _deployStack(address(governance));
+
+        bytes32[] memory ids = new bytes32[](2);
+        ids[0] = "INTEGRATION_1";
+        ids[1] = "INTEGRATION_2";
+        _registerIntegration(ids[0]);
+        _registerIntegration(ids[1]);
+
+        // Precondition: the Controller knows about neither integration.
+        assertFalse(_integrationSet(inst.controller, ids[0]));
+        assertFalse(_integrationSet(inst.controller, ids[1]));
+
+        governance.setIntegrations(inst, ids);
+
+        assertTrue(_integrationSet(inst.controller, ids[0]));
+        assertTrue(_integrationSet(inst.controller, ids[1]));
+        assertEq(IControllerIntegrationsLike(inst.controller).integrations().length, 2);
+    }
+
+    function test_setIntegrations_emptyArray_reverts() external {
+        PAUInstance memory inst = _deployStack(address(governance));
+
+        vm.expectRevert(IController.EmptyArray.selector);
+        governance.setIntegrations(inst, new bytes32[](0));
+    }
+
+    function test_setIntegrations_unregisteredId_reverts() external {
+        PAUInstance memory inst = _deployStack(address(governance));
+
+        bytes32[] memory ids = new bytes32[](1);
+        ids[0] = "UNKNOWN";
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IEnumerableIntegrations.IntegrationNotFound.selector, ids[0])
+        );
+        governance.setIntegrations(inst, ids);
+    }
+
+    function test_setIntegrations_notAdmin_reverts() external {
+        // Stack owned by someone else: the harness holds no admin, so the Controller rejects it.
+        PAUInstance memory inst = _deployStack(makeAddr("otherAdmin"));
+
+        bytes32[] memory ids = new bytes32[](1);
+        ids[0] = "INTEGRATION_1";
+        _registerIntegration(ids[0]);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IController.NotAdmin.selector, address(governance))
+        );
+        governance.setIntegrations(inst, ids);
+    }
+
+    /**********************************************************************************************/
+    /*** removeIntegrations Tests                                                               ***/
+    /**********************************************************************************************/
+
+    function test_removeIntegrations_removesFromController() external {
+        PAUInstance memory inst = _deployStack(address(governance));
+
+        bytes32[] memory ids = new bytes32[](2);
+        ids[0] = "INTEGRATION_1";
+        ids[1] = "INTEGRATION_2";
+        _registerIntegration(ids[0]);
+        _registerIntegration(ids[1]);
+
+        governance.setIntegrations(inst, ids);
+
+        // Remove only the first; the second must remain.
+        bytes32[] memory toRemove = new bytes32[](1);
+        toRemove[0] = ids[0];
+
+        governance.removeIntegrations(inst, toRemove);
+
+        assertFalse(_integrationSet(inst.controller, ids[0]));
+        assertTrue(_integrationSet(inst.controller, ids[1]));
+        assertEq(IControllerIntegrationsLike(inst.controller).integrations().length, 1);
+    }
+
+    function test_removeIntegrations_emptyArray_reverts() external {
+        PAUInstance memory inst = _deployStack(address(governance));
+
+        vm.expectRevert(IController.EmptyArray.selector);
+        governance.removeIntegrations(inst, new bytes32[](0));
+    }
+
+    function test_removeIntegrations_unsetId_reverts() external {
+        PAUInstance memory inst = _deployStack(address(governance));
+
+        bytes32[] memory ids = new bytes32[](1);
+        ids[0] = "INTEGRATION_1";
+
+        // Never synced to the Controller, so removal reverts.
+        vm.expectRevert(
+            abi.encodeWithSelector(IEnumerableIntegrations.IntegrationNotFound.selector, ids[0])
+        );
+        governance.removeIntegrations(inst, ids);
+    }
+
+    function test_removeIntegrations_notAdmin_reverts() external {
+        PAUInstance memory inst = _deployStack(makeAddr("otherAdmin"));
+
+        bytes32[] memory ids = new bytes32[](1);
+        ids[0] = "INTEGRATION_1";
+
+        vm.expectRevert(
+            abi.encodeWithSelector(IController.NotAdmin.selector, address(governance))
+        );
+        governance.removeIntegrations(inst, ids);
     }
 
 }
