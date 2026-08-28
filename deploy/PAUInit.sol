@@ -126,6 +126,7 @@ library PAUInit {
 
     /**
      * @notice Grants an AdministeredAgent the ALLOCATOR_ROLE on the stack's AccessControls.
+     * @dev The caller of this function must be a role admin for `ALLOCATOR_ROLE`
      * @param  inst  The PAU stack.
      * @param  agent The AdministeredAgent to grant.
      */
