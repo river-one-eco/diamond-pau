@@ -295,6 +295,16 @@ contract PAUInit_Integration_Tests is Test {
         governance.addAllocator(inst, address(0));
     }
 
+    function test_addAllocator_mismatchedAccessControls_reverts() external {
+        PAUInstance memory inst = _deployStack(address(governance));
+        // Point the instance at AccessControls the Controller was not wired to; the sanity check
+        // must reject the stack before any role is granted.
+        inst.accessControls = makeAddr("wrong");
+
+        vm.expectRevert(bytes("PAUInit/controller-access-controls-mismatch"));
+        governance.addAllocator(inst, makeAddr("agent"));
+    }
+
     /**********************************************************************************************/
     /*** setIntegrations Tests                                                                  ***/
     /**********************************************************************************************/

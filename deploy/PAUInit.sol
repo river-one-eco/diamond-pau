@@ -127,11 +127,17 @@ library PAUInit {
     /**
      * @notice Grants an AdministeredAgent the ALLOCATOR_ROLE on the stack's AccessControls.
      * @dev The caller of this function must be a role admin for `ALLOCATOR_ROLE`
+     * @dev Checks the access controls on `inst` matches the controller's
      * @param  inst  The PAU stack.
      * @param  agent The AdministeredAgent to grant.
      */
     function addAllocator(PAUInstance memory inst, address agent) internal {
         require(agent != address(0), "PAUInit/agent-zero-address");
+
+        require(
+            IControllerLike(inst.controller).accessControls() == inst.accessControls,
+            "PAUInit/controller-access-controls-mismatch"
+        );
 
         IAccessControlLike(inst.accessControls).grantRole(ALLOCATOR_ROLE, agent);
     }
